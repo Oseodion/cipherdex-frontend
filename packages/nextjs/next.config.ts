@@ -1,8 +1,19 @@
 import type { NextConfig } from "next";
 
+const SECURITY_HEADERS = [
+  {
+    source: "/(.*)",
+    headers: [
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+      { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+    ],
+  },
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   devIndicators: false,
+  headers: async () => SECURITY_HEADERS,
   // Turbopack: resolve Node.js built-ins to empty modules for client bundle
   // Next.js 15.x uses experimental.turbo; Next 16+ uses turbopack
   experimental: {
@@ -17,10 +28,10 @@ const nextConfig: NextConfig = {
     },
   },
   typescript: {
-    ignoreBuildErrors: process.env.NEXT_PUBLIC_IGNORE_BUILD_ERROR === "true",
+    ignoreBuildErrors: false,
   },
   eslint: {
-    ignoreDuringBuilds: process.env.NEXT_PUBLIC_IGNORE_BUILD_ERROR === "true",
+    ignoreDuringBuilds: false,
   },
   // Configure webpack fallbacks for client-side (these packages shouldn't be bundled for browser)
   webpack: (config, { isServer }) => {

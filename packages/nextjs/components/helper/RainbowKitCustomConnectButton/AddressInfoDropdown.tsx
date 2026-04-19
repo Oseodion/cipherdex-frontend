@@ -20,7 +20,6 @@ type AddressInfoDropdownProps = {
 export const AddressInfoDropdown = ({ address, ensAvatar, displayName }: AddressInfoDropdownProps) => {
   const { disconnect } = useDisconnect();
   const checkSumAddress = getAddress(address);
-
   const [selectingNetwork, setSelectingNetwork] = useState(false);
   const dropdownRef = useRef<HTMLDetailsElement>(null);
 
@@ -35,22 +34,25 @@ export const AddressInfoDropdown = ({ address, ensAvatar, displayName }: Address
     <>
       <details ref={dropdownRef} className="dropdown dropdown-end leading-3">
         <summary className="btn btn-secondary btn-sm pl-0 pr-2 shadow-md dropdown-toggle gap-0 h-auto!">
-          <BlockieAvatar address={checkSumAddress} size={30} ensImage={ensAvatar} />
-          <span className="ml-2 mr-1">{displayName}</span>
-          <ChevronDownIcon className="h-6 w-4 ml-2 sm:ml-0" />
+          <BlockieAvatar address={checkSumAddress} size={24} ensImage={ensAvatar} />
+          <span className="ml-2 mr-1 max-w-[80px] truncate hidden sm:inline">{displayName}</span>
+          <ChevronDownIcon className="h-4 w-3.5 ml-1" />
         </summary>
-        <ul className="dropdown-content menu z-2 p-2 mt-2 shadow-center shadow-accent bg-base-200 rounded-box gap-1">
+        <ul
+          className="dropdown-content menu z-2 p-2 mt-2 shadow-center shadow-accent bg-base-200 rounded-box gap-1"
+          style={{ minWidth: "200px", width: "200px" }}
+        >
           <NetworkOptions hidden={!selectingNetwork} />
           {allowedNetworks.length > 1 ? (
             <li className={selectingNetwork ? "hidden" : ""}>
               <button
                 className="h-8 btn-sm rounded-xl! flex gap-3 py-3"
                 type="button"
-                onClick={() => {
-                  setSelectingNetwork(true);
-                }}
+                style={{ whiteSpace: "nowrap", width: "100%" }}
+                onClick={() => setSelectingNetwork(true)}
               >
-                <ArrowsRightLeftIcon className="h-6 w-4 ml-2 sm:ml-0" /> <span>Switch Network</span>
+                <ArrowsRightLeftIcon className="h-6 w-4 ml-2 sm:ml-0" />
+                <span>Switch Network</span>
               </button>
             </li>
           ) : null}
@@ -58,9 +60,11 @@ export const AddressInfoDropdown = ({ address, ensAvatar, displayName }: Address
             <button
               className="menu-item text-error h-8 btn-sm rounded-xl! flex gap-3 py-3"
               type="button"
+              style={{ whiteSpace: "nowrap", width: "100%" }}
               onClick={() => disconnect()}
             >
-              <ArrowLeftIcon className="h-6 w-4 ml-2 sm:ml-0" /> <span>Disconnect</span>
+              <ArrowLeftIcon className="h-6 w-4 ml-2 sm:ml-0" />
+              <span>Disconnect</span>
             </button>
           </li>
         </ul>

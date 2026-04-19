@@ -292,9 +292,15 @@ export const createFhevmInstance = async (parameters: {
   const pub = await publicKeyStorageGet(aclAddress);
   throwIfAborted();
 
+  // Allow overriding the relayer base URL via env var in case Zama updates their endpoint.
+  // e.g. NEXT_PUBLIC_RELAYER_URL=https://relayer.testnet.zama.org
+  const relayerBase =
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RELAYER_URL) ||
+    relayerSDK.SepoliaConfig.relayerUrl;
+
   const config: FhevmInstanceConfig = {
     ...relayerSDK.SepoliaConfig,
-    relayerUrl: `${relayerSDK.SepoliaConfig.relayerUrl}/v2`,
+    relayerUrl: `${relayerBase}/v2`,
     network: providerOrUrl,
     publicKey: pub.publicKey,
     publicParams: pub.publicParams,

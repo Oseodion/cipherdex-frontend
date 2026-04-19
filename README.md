@@ -1,190 +1,118 @@
-# FHEVM React Template
+# CipherDEX — Confidential AMM on Zama FHEVM
 
-A minimal React frontend template for building FHEVM-enabled decentralized applications (dApps). This template provides a simple development interface for interacting with FHEVM smart contracts, specifically the `FHECounter.sol` contract.
+A decentralized exchange where swap amounts are encrypted with Fully Homomorphic Encryption before the transaction leaves the browser. MEV bots watching the mempool see only encrypted ciphertext — the actual trade size is never revealed on-chain.
 
-## 🚀 What is FHEVM?
+Built for the **Zama Developer Program Mainnet Season 2 — Builder Track**.
 
-FHEVM (Fully Homomorphic Encryption Virtual Machine) enables computation on encrypted data directly on Ethereum. This template demonstrates how to build dApps that can perform computations while keeping data private.
+---
 
-## ✨ Features
+## The Problem
 
-- **🔐 FHEVM Integration**: Built-in support for fully homomorphic encryption
-- **⚛️ React + Next.js**: Modern, performant frontend framework
-- **🎨 Tailwind CSS**: Utility-first styling for rapid UI development
-- **🔗 RainbowKit**: Seamless wallet connection and management
-- **🌐 Multi-Network Support**: Works on both Sepolia testnet and local Hardhat node
-- **📦 Monorepo Structure**: Organized packages for SDK, contracts, and frontend
+On standard DEXes like Uniswap, every swap sits in the public mempool for roughly 12 seconds before it confirms. MEV bots read the swap amount in real time, calculate the price impact, and insert their own trades first. The user gets a worse execution price. This is front-running, and it costs DeFi users hundreds of millions of dollars per year.
 
-## 🧰 Scripts overview
+## How CipherDEX Fixes It
 
-| Script                   | What it does                                                   |
-| ------------------------ | -------------------------------------------------------------- |
-| `pnpm dev`              | Starts the frontend dev server for the React template.        |
-| `pnpm test`             | Runs the frontend tests in watch mode.                        |
-| `pnpm lint`             | Lints the project using the configured ESLint rules.          |
-| `pnpm build`            | Builds the production bundle for deployment.                  |
-| `pnpm preview`          | Serves the built app locally to verify the production build.  |
+CipherDEX encrypts the swap amount client-side using Zama's FHE SDK before the transaction is submitted. The pool contract executes AMM math on ciphertext — it never sees the raw input amount. Even the sequencer and validators cannot read what was swapped.
 
-## 📋 Prerequinextjss
+**Encrypt → Submit → Settle. In that order. The amount is never plaintext on-chain.**
 
-Before you begin, ensure you have:
+---
 
-- **Node.js** (v18 or higher)
-- **pnpm** package manager
-- **MetaMask** browser extension
-- **Git** for cloning the repository
+## Architecture
 
-## 🛠️ Quick Start
+```
+User enters amount
+       ↓
+FHE SDK encrypts amount in browser (Zama relayer issues input proof)
+       ↓
+Encrypted handle + proof submitted to CipherDEXPool.swap()
+       ↓
+Pool performs constant-product AMM math on encrypted values (FHE operations)
+       ↓
+Output token amount revealed only to recipient via ACL-gated decryption
+       ↓
+Balance updated — plaintext amount never appears in calldata or logs
+```
 
-### 1. Clone and Setup
+The pool uses confidential ERC20 tokens (cUSDT and cETH). All token balances and LP shares are stored as FHE ciphertexts. Encrypted handles are 32-byte opaque pointers — a mempool observer learns nothing about trade size or direction.
+
+---
+
+## Features
+
+- **Confidential swaps** — FHE-encrypted amounts, MEV-resistant by construction
+- **Add / remove liquidity** — encrypted inputs, fully on-chain
+- **Faucet** — claim 10,000 cUSDT and 5 cETH every 24 hours
+- **Portfolio page** — reveal your encrypted balances with an in-browser FHE decryption
+- **Transaction history** — on-chain Swap events with encrypted amounts shown as `░░░░`
+- **Performance dashboard** — 28-day activity heatmap from live event data
+- **Audit view** — explains the FHE privacy model and shows the encrypted trade log
+
+---
+
+## Deployed Contracts — Sepolia
+
+| Contract | Address |
+|---|---|
+| cUSDT | `0x401924f4bd976A0168eCa95253eAE61590e89115` |
+| cETH | `0x51aA0DA9A1100deb3f2B2B75dD4cc1b67A5590F4` |
+| CipherDEXPool | `0x34ADB4dfc310dAF08982E10BA8162794A7521734` |
+| CipherDEXFaucet | `0x53063D910e9Ebe4B112ceFCEB1a08A62A7cD2A9f` |
+
+---
+
+## Tech Stack
+
+| Layer | Tools |
+|---|---|
+| Smart contracts | Solidity, Hardhat, Zama FHEVM / fhevmjs |
+| Frontend | Next.js 15, TypeScript, wagmi v2, viem, RainbowKit, ethers.js |
+| FHE | Zama relayer SDK, fhevmjs |
+| Styling | Tailwind CSS, Cabinet Grotesk |
+
+---
+
+## Running Locally
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd fhevm-react-template
-
-# Initialize submodules (includes fhevm-hardhat-template)
-git submodule update --init --recursive
-
-# Install dependencies
+git clone <repo>
+cd packages/nextjs
+cp .env.example .env.local   # fill in values
 pnpm install
+pnpm dev
 ```
 
-### 2. Environment Configuration
+Open `http://localhost:3000`. Connect MetaMask on Sepolia, claim from the faucet, swap.
 
-Set up your Hardhat environment variables by following the [FHEVM documentation](https://docs.zama.ai/protocol/solidity-guides/getting-started/setup#set-up-the-hardhat-configuration-variables-optional):
-
-- `MNEMONIC`: Your wallet mnemonic phrase
-- `INFURA_API_KEY`: Your Infura API key for Sepolia
-
-### 3. Start Development Environment
-
-**Option A: Local Development (Recommended for testing)**
-
-```bash
-# Terminal 1: Start local Hardhat node
-pnpm chain
-# RPC URL: http://127.0.0.1:8545 | Chain ID: 31337
-
-# Terminal 2: Deploy contracts to localhost
-pnpm deploy:localhost
-
-# Terminal 3: Start the frontend
-pnpm start
-```
-
-**Option B: Sepolia Testnet**
-
-```bash
-# Deploy to Sepolia testnet
-pnpm deploy:sepolia
-
-# Start the frontend
-pnpm start
-```
-
-### 4. Connect MetaMask
-
-1. Open [http://localhost:3000](http://localhost:3000) in your browser
-2. Click "Connect Wallet" and select MetaMask
-3. If using localhost, add the Hardhat network to MetaMask:
-   - **Network Name**: Hardhat Local
-   - **RPC URL**: `http://127.0.0.1:8545`
-   - **Chain ID**: `31337`
-   - **Currency Symbol**: `ETH`
-
-### ⚠️ Common pitfalls
-
-- If contracts are not found, make sure submodules are initialized with  
-  `git submodule update --init --recursive` and that you have run `pnpm install`.
-- If the frontend shows network or RPC errors, double-check that `MNEMONIC`
-  and `INFURA_API_KEY` are correctly set in your Hardhat environment.
-- If the app builds but cannot read contract state, verify that
-  `NEXT_PUBLIC_ALCHEMY_API_KEY` and `packages/nextjs/contracts/deployedContracts.ts`
-  point to the right network and deployed addresses.
-
-### ⚠️ Sepolia Production note
-
-- In production, `NEXT_PUBLIC_ALCHEMY_API_KEY` must be set (see `packages/nextjs/scaffold.config.ts`). The app throws if missing.
-- Ensure `packages/nextjs/contracts/deployedContracts.ts` points to your live contract addresses.
-- Optional: set `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` for better WalletConnect reliability.
-- Optional: add per-chain RPCs via `rpcOverrides` in `packages/nextjs/scaffold.config.ts`.
-
-## 🔧 Troubleshooting
-
-### Common MetaMask + Hardhat Issues
-
-When developing with MetaMask and Hardhat, you may encounter these common issues:
-
-#### ❌ Nonce Mismatch Error
-
-**Problem**: MetaMask tracks transaction nonces, but when you restart Hardhat, the node resets while MetaMask doesn't update its tracking.
-
-**Solution**:
-1. Open MetaMask extension
-2. Select the Hardhat network
-3. Go to **Settings** → **Advanced**
-4. Click **"Clear Activity Tab"** (red button)
-5. This resets MetaMask's nonce tracking
-
-#### ❌ Cached View Function Results
-
-**Problem**: MetaMask caches smart contract view function results. After restarting Hardhat, you may see outdated data.
-
-**Solution**:
-1. **Restart your entire browser** (not just refresh the page)
-2. MetaMask's cache is stored in extension memory and requires a full browser restart to clear
-
-> 💡 **Pro Tip**: Always restart your browser after restarting Hardhat to avoid cache issues.
-
-For more details, see the [MetaMask development guide](https://docs.metamask.io/wallet/how-to/run-devnet/).
-
-## 📁 Project Structure
-
-This template uses a monorepo structure with three main packages:
+### Required environment variables
 
 ```
-fhevm-react-template/
-├── packages/
-│   ├── fhevm-hardhat-template/    # Smart contracts & deployment
-│   ├── fhevm-sdk/                 # FHEVM SDK package
-│   └── nextjs/                      # React frontend application
-└── scripts/                       # Build and deployment scripts
+NEXT_PUBLIC_ALCHEMY_API_KEY=
+NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=
+NEXT_PUBLIC_CUSDT_ADDRESS=0x401924f4bd976A0168eCa95253eAE61590e89115
+NEXT_PUBLIC_CETH_ADDRESS=0x51aA0DA9A1100deb3f2B2B75dD4cc1b67A5590F4
+NEXT_PUBLIC_POOL_ADDRESS=0x34ADB4dfc310dAF08982E10BA8162794A7521734
+NEXT_PUBLIC_FAUCET_ADDRESS=0x53063D910e9Ebe4B112ceFCEB1a08A62A7cD2A9f
 ```
 
-### Key Components
+---
 
-#### 🔗 FHEVM Integration (`packages/nextjs/hooks/fhecounter-example/`)
-- **`useFHECounterWagmi.tsx`**: Example hook demonstrating FHEVM contract interaction
-- Essential hooks for FHEVM-enabled smart contract communication
-- Easily copyable to any FHEVM + React project
+## Known Limitations
 
-#### 🎣 Wallet Management (`packages/nextjs/hooks/helper/`)
-- MetaMask wallet provider hooks
-- Compatible with EIP-6963 standard
-- Easily adaptable for other wallet providers
+**Reserve stats don't update after addLiquidity.**
+`reserveSnapshotA` and `reserveSnapshotB` are plaintext `uint64` values written only during `swap()`. The confidential token standard provides no plaintext `balanceOf` — all balance reads return encrypted `bytes32` handles. Reserve figures on the Liquidity Pools page reflect the state as of the last swap, not the last liquidity addition. This is a consequence of Zama FHEVM's confidential token design, not a frontend bug.
 
-#### 🔧 Flexibility
-- Replace `ethers.js` with `Wagmi` or other React-friendly libraries
-- Modular architecture for easy customization
-- Support for multiple wallet providers
+**LP share balances are encrypted.**
+Each user's share is stored as an FHE ciphertext. The pool exposes `getShares(address) → bytes32` (an encrypted handle). Remove liquidity works on-chain, but the UI cannot display individual share amounts without the pool contract exposing a decryption path for the caller.
 
-## 📚 Additional Resources
+**FHE requires specific browser headers.**
+The app sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` and `Cross-Origin-Embedder-Policy: require-corp`. These are required for the SharedArrayBuffer support that FHE depends on. If FHE fails to initialize, the swap button will show an error message.
 
-### Official Documentation
-- [FHEVM Documentation](https://docs.zama.ai/protocol/solidity-guides/) - Complete FHEVM guide
-- [FHEVM Hardhat Guide](https://docs.zama.ai/protocol/solidity-guides/development-guide/hardhat) - Hardhat integration
-- [Relayer SDK Documentation](https://docs.zama.ai/protocol/relayer-sdk-guides/) - SDK reference
-- [Environment Setup](https://docs.zama.ai/protocol/solidity-guides/getting-started/setup#set-up-the-hardhat-configuration-variables-optional) - MNEMONIC & API keys
+**Multiple wallet extensions can cause FHE init failure.**
+Browser extensions that inject wallet providers fight over `window.ethereum` before the page loads. This can break the COOP/COEP environment the FHE SDK requires. Recommended: use a dedicated browser profile with one wallet extension. MetaMask on a clean profile works reliably.
 
-### Development Tools
-- [MetaMask + Hardhat Setup](https://docs.metamask.io/wallet/how-to/run-devnet/) - Local development
-- [React Documentation](https://reactjs.org/) - React framework guide
+**WalletConnect WebSocket errors on localhost.**
+These appear in the console but are cosmetic — WalletConnect's relay attempts a live connection even in dev. Functionality is unaffected.
 
-### Community & Support
-- [FHEVM Discord](https://discord.com/invite/zama) - Community support
-- [GitHub Issues](https://github.com/zama-ai/fhevm-react-template/issues) - Bug reports & feature requests
-
-## 📄 License
-
-This project is licensed under the **BSD-3-Clause-Clear License**. See the [LICENSE](LICENSE) file for details.
+**Network: Zama relayer dependency.**
+FHE balance decryption and swap encryption require a live connection to the Zama relayer at `relayer.testnet.zama.org`. If you see `ERR_NAME_NOT_RESOLVED` in the console, clear your browser DNS cache at `chrome://net-internals/#dns` and reload. The relayer URL can be overridden via the `NEXT_PUBLIC_RELAYER_URL` environment variable.
