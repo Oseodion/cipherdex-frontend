@@ -76,5 +76,6 @@
       "utf-8-validate",
       "yarn"
     ]
-  }
+  },
+  "packageManager": "pnpm@9.0.0"
 }
