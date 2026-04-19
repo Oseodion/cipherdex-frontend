@@ -17,16 +17,10 @@ export const wagmiConfig = createConfig({
   connectors: wagmiConnectors(),
 ssr: false,
   client: ({ chain }) => {
-    let rpcFallbacks = [http()];
     const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
-    if (rpcOverrideUrl) {
-      rpcFallbacks = [http(rpcOverrideUrl), http()];
-    } else {
-      const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
-      if (alchemyHttpUrl) {
-        rpcFallbacks = [http(alchemyHttpUrl), http()];
-      }
-    }
+    const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
+    const primaryUrl = rpcOverrideUrl || alchemyHttpUrl;
+    const rpcFallbacks = primaryUrl ? [http(primaryUrl)] : [http()];
     return createClient({
       chain,
       transport: fallback(rpcFallbacks),
