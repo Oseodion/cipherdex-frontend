@@ -1,3 +1,6 @@
 {
-  "packageManager": "pnpm"
+  "installCommand": "pnpm install",
+  "buildCommand": "cd packages/nextjs && pnpm run build",
+  "outputDirectory": "packages/nextjs/.next",
+  "framework": "nextjs"
 }
