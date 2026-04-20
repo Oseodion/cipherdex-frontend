@@ -34,8 +34,9 @@ export function SwapPage() {
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
   const provider = useMemo(() => {
-    if (!connectorClient) return undefined;
-    return connectorClient.transport as any;
+    const globalProvider = typeof window !== "undefined" ? (window as any).ethereum : undefined;
+    if (!connectorClient) return globalProvider;
+    return (connectorClient as any).transport?.value?.provider ?? (connectorClient as any).transport ?? globalProvider;
   }, [connectorClient]);
 
   const { instance: fhevmInstance, status: fhevmStatus, error: fhevmError } = useFhevm({
@@ -76,7 +77,15 @@ export function SwapPage() {
     reset: resetSwap,
   } = useSwap(fhevmInstance);
 
-  const { activeTraders, totalTrades, heatmapCounts, recentTrades, loading: statsLoading, refetch: poolRefetch } = usePoolStats();
+  const {
+    activeTraders,
+    totalTrades,
+    heatmapCounts,
+    recentTrades,
+    loading: statsLoading,
+    refreshing: statsRefreshing,
+    refetch: poolRefetch,
+  } = usePoolStats();
   const { poolInitialized, snapshotA, snapshotB, rateUSDTperETH, refetch: poolInitRefetch } = usePoolInit();
 
   // --- Balance reveal animation ---
@@ -173,6 +182,11 @@ export function SwapPage() {
         setToastVisible(true);
         setTimeout(() => setToastVisible(false), 5000);
         poolRefetch();
+        window.dispatchEvent(
+          new CustomEvent("cipherdex:swap-confirmed", {
+            detail: { txHash: txHash ?? null },
+          }),
+        );
         setTimeout(() => poolInitRefetch(), 2000);
         if (typeof window !== "undefined") {
           const prev = parseInt(localStorage.getItem("cipherdex_fhe_proofs") ?? "0", 10);
@@ -193,7 +207,7 @@ export function SwapPage() {
       }
     }, 16);
     return () => clearInterval(iv);
-  }, [swapSuccess, resetSwap]);
+  }, [swapSuccess, resetSwap, poolRefetch, poolInitRefetch, txHash]);
 
   // Use live pool snapshots; fall back to a static reference rate when pool isn't initialized
   const RATE = rateUSDTperETH ?? 2341.5;
@@ -904,10 +918,10 @@ export function SwapPage() {
                 }}
               >
                 {[
-                  { label: "Total Trades", value: statsLoading ? "0" : totalTrades.toString(), sub: "All time" },
+                  { label: "Total Trades", value: totalTrades.toString(), sub: "All time" },
                   {
                     label: "Active Traders",
-                    value: statsLoading ? "0" : activeTraders.toString(),
+                    value: activeTraders.toString(),
                     sub: "Unique wallets",
                   },
                   {
@@ -1081,7 +1095,7 @@ export function SwapPage() {
                     </div>
                     <span style={{ fontSize: "10px", color: "#3a3832" }}>Amounts encrypted</span>
                   </div>
-                  {statsLoading && (
+                  {statsLoading && recentTrades.length === 0 && (
                     <div style={{ fontSize: "12px", color: "#3a3832", fontFamily: "monospace" }}>Loading…</div>
                   )}
                   {!statsLoading && recentTrades.length === 0 && (
@@ -1209,7 +1223,9 @@ export function SwapPage() {
                   }}
                 >
                   <span>28 days ago</span>
-                  <span>Today · {statsLoading ? "…" : `${totalTrades} swaps`}</span>
+                  <span>
+                    Today · {totalTrades} swaps {statsRefreshing ? "· refreshing…" : ""}
+                  </span>
                 </div>
               </div>
             </>
@@ -1337,7 +1353,7 @@ export function SwapPage() {
                   { label: "Your cETH", value: cETHBalance ?? "—", sub: "Decrypted balance" },
                   {
                     label: "Active Traders",
-                    value: statsLoading ? "—" : activeTraders.toString(),
+                    value: activeTraders.toString(),
                     sub: "On Sepolia",
                   },
                 ].map((s, i) => (
@@ -2365,7 +2381,7 @@ export function SwapPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px" }}>
                       <div>
                         <div style={{ fontSize: "16px", fontWeight: 700, fontFamily: "monospace", color: "#FFD208" }}>
-                          {statsLoading ? "—" : totalTrades.toLocaleString()}
+                          {totalTrades.toLocaleString()}
                         </div>
                         <div
                           style={{
@@ -2382,7 +2398,7 @@ export function SwapPage() {
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <div style={{ fontSize: "16px", fontWeight: 700, fontFamily: "monospace" }}>
-                          {statsLoading ? "—" : activeTraders.toString()}
+                          {activeTraders.toString()}
                         </div>
                         <div
                           style={{

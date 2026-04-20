@@ -35,13 +35,19 @@ export function usePoolStats() {
   const [recentTrades, setRecentTrades] = useState<string[]>([]);
   const [swapRecords, setSwapRecords] = useState<SwapRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const swapEvent = useMemo(() => PoolABI.abi.find((item: any) => item.type === "event" && item.name === "Swap"), []);
 
-  const loadPoolMetrics = useCallback(async () => {
+  const loadPoolMetrics = useCallback(async (opts?: { foreground?: boolean }) => {
     if (!publicClient || !CONTRACTS.pool || !swapEvent) return;
-    setLoading(true);
+    const foreground = opts?.foreground ?? false;
+    if (foreground) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     setError(null);
 
     try {
@@ -111,14 +117,25 @@ export function usePoolStats() {
     } catch (err: any) {
       setError(err?.message ?? "Unable to load pool activity");
     } finally {
-      setLoading(false);
+      if (foreground) {
+        setLoading(false);
+      }
+      setRefreshing(false);
     }
   }, [publicClient, swapEvent]);
 
   useEffect(() => {
-    loadPoolMetrics();
-    const intervalId = window.setInterval(loadPoolMetrics, 60000);
+    loadPoolMetrics({ foreground: true });
+    const intervalId = window.setInterval(() => loadPoolMetrics(), 60000);
     return () => window.clearInterval(intervalId);
+  }, [loadPoolMetrics]);
+
+  useEffect(() => {
+    const onSwapConfirmed = () => {
+      loadPoolMetrics();
+    };
+    window.addEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
+    return () => window.removeEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
   }, [loadPoolMetrics]);
 
   return {
@@ -128,7 +145,8 @@ export function usePoolStats() {
     recentTrades,
     swapRecords,
     loading,
+    refreshing,
     error,
-    refetch: loadPoolMetrics,
+    refetch: () => loadPoolMetrics(),
   };
 }

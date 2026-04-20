@@ -9,7 +9,7 @@ export const CONTRACTS = {
 };
 
 export function useCipherDEX() {
-  const { address, status } = useAccount();
+  const { address, status, chainId: connectedChainId } = useAccount();
   const isConnected = status === "connected";
   const { data: walletClient } = useWalletClient();
   const { ethersSigner, ethersProvider } = useWagmiEthers();
@@ -18,7 +18,7 @@ export function useCipherDEX() {
   return {
     address,
     isConnected,
-    chainId: walletClient?.chain?.id,
+    chainId: walletClient?.chain?.id ?? connectedChainId,
     ethersSigner,
     ethersProvider,
     publicClient,

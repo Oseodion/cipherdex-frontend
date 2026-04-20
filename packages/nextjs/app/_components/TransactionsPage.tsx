@@ -34,7 +34,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
 
   const load = useCallback(async () => {
     if (!publicClient) return;
-    setLoading(true);
+    setLoading(prev => (events.length === 0 ? true : prev));
     setError(null);
     try {
       const latest = await publicClient.getBlockNumber();
@@ -83,10 +83,18 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
     } finally {
       setLoading(false);
     }
-  }, [publicClient]);
+  }, [publicClient, events.length]);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const onSwapConfirmed = () => {
+      load();
+    };
+    window.addEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
+    return () => window.removeEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
   }, [load]);
 
   const filtered = useMemo(() => {
