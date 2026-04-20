@@ -32,13 +32,15 @@ export function SwapPage() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
   const revealTimeoutRef = useRef<number | null>(null);
+  const [fheUnsupportedReason, setFheUnsupportedReason] = useState<string | null>(null);
 
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
   const provider = useMemo(() => {
     const globalProvider = typeof window !== "undefined" ? (window as any).ethereum : undefined;
-    if (!connectorClient) return globalProvider;
-    return (connectorClient as any).transport?.value?.provider ?? (connectorClient as any).transport ?? globalProvider;
+    if (globalProvider) return globalProvider;
+    if (!connectorClient) return undefined;
+    return (connectorClient as any).transport?.value?.provider ?? (connectorClient as any).transport;
   }, [connectorClient]);
 
   const { instance: fhevmInstance, status: fhevmStatus, error: fhevmError } = useFhevm({
@@ -274,6 +276,23 @@ export function SwapPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isMobile) {
+      setFheUnsupportedReason(null);
+      return;
+    }
+    if (typeof (window as any).SharedArrayBuffer === "undefined") {
+      setFheUnsupportedReason("Mobile browser does not expose SharedArrayBuffer for FHE.");
+      return;
+    }
+    if (!window.crossOriginIsolated) {
+      setFheUnsupportedReason("Mobile browser session is not cross-origin isolated for FHE.");
+      return;
+    }
+    setFheUnsupportedReason(null);
+  }, [isMobile]);
+
   // --- Hide balances immediately on wallet disconnect ---
   useEffect(() => {
     if (!isConnected) {
@@ -326,6 +345,10 @@ export function SwapPage() {
   async function doSwap() {
     setIsSubmitting(true);
     try {
+      if (fheUnsupportedReason) {
+        setIsSubmitting(false);
+        return;
+      }
     if (isRealSwapping || !canSwap || !isConnected) { setIsSubmitting(false); return; }
     const amountValue = parseFloat(amountIn);
     if (!Number.isFinite(amountValue) || amountValue <= 0) { setIsSubmitting(false); return; }
@@ -1869,17 +1892,29 @@ export function SwapPage() {
                   {/* Swap button */}
                   <button
                     onClick={doSwap}
-                    disabled={isSubmitting || !canSwap || isRealSwapping || !isValidAmount}
+                    disabled={isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason}
                     style={{
                       width: "100%",
-                      background: isSubmitting || !canSwap || isRealSwapping || !isValidAmount ? "rgba(255,210,8,0.1)" : "#FFD208",
-                      color: isSubmitting || !canSwap || isRealSwapping || !isValidAmount ? "#FFD208" : "#000",
-                      border: isSubmitting || !canSwap || isRealSwapping || !isValidAmount ? "1px solid rgba(255,210,8,0.22)" : "none",
+                      background:
+                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                          ? "rgba(255,210,8,0.1)"
+                          : "#FFD208",
+                      color:
+                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                          ? "#FFD208"
+                          : "#000",
+                      border:
+                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                          ? "1px solid rgba(255,210,8,0.22)"
+                          : "none",
                       borderRadius: "12px",
                       padding: "14px",
                       fontSize: "14px",
                       fontWeight: 900,
-                      cursor: isSubmitting || !canSwap || isRealSwapping || !isValidAmount ? "not-allowed" : "pointer",
+                      cursor:
+                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                          ? "not-allowed"
+                          : "pointer",
                       transition: "background 0.25s, color 0.25s",
                       display: "flex",
                       alignItems: "center",
@@ -1894,6 +1929,8 @@ export function SwapPage() {
                     )}
                     {isSubmitting || isRealSwapping
                       ? "Processing…"
+                      : fheUnsupportedReason
+                        ? "FHE Unsupported on Mobile"
                       : !isValidAmount
                         ? "Enter an amount"
                         : swapError
@@ -1939,6 +1976,22 @@ export function SwapPage() {
                       }}
                     >
                       {decryptUiError}
+                    </div>
+                  )}
+                  {fheUnsupportedReason && isConnected && (
+                    <div
+                      style={{
+                        marginTop: "8px",
+                        padding: "10px 12px",
+                        background: "rgba(255,255,245,0.03)",
+                        border: "1px solid rgba(255,255,245,0.08)",
+                        borderRadius: "8px",
+                        fontSize: "11px",
+                        color: "#6b6860",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {fheUnsupportedReason} Use desktop browser for FHE decrypt/swap.
                     </div>
                   )}
 
