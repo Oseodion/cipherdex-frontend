@@ -31,6 +31,7 @@ export function SwapPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
+  const revealTimeoutRef = useRef<number | null>(null);
 
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
@@ -139,6 +140,26 @@ export function SwapPage() {
     setPendingReveal(decryptRequest);
     setDecryptRequest(null);
   }, [decryptRequest, isDecrypting, cUSDTBalance, cETHBalance]);
+
+  useEffect(() => {
+    if (decryptRequest === null) return;
+    if (revealTimeoutRef.current) {
+      window.clearTimeout(revealTimeoutRef.current);
+    }
+    revealTimeoutRef.current = window.setTimeout(() => {
+      const n = decryptRequest;
+      setDecryptUiError("Decrypt did not return a balance in time. Please retry.");
+      setDecryptRequest(null);
+      setRevealing(prev => ({ ...prev, [n]: false }));
+    }, 25000);
+
+    return () => {
+      if (revealTimeoutRef.current) {
+        window.clearTimeout(revealTimeoutRef.current);
+        revealTimeoutRef.current = null;
+      }
+    };
+  }, [decryptRequest]);
 
   // --- After swap settles: run amountOut count-up then show toast ---
   // Use refs for values that shouldn't re-trigger the effect
@@ -280,6 +301,7 @@ export function SwapPage() {
       return;
     }
 
+    await refetch();
     setRevealing(prev => ({ ...prev, [n]: true }));
     setDisplayBals(prev => ({ ...prev, [n]: "▓▓▓▓▓▓▓▓" }));
     setDecryptRequest(n);

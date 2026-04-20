@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { CONTRACTS } from "./useCipherDEX";
 import { useWagmiEthers } from "./wagmi/useWagmiEthers";
@@ -39,6 +39,36 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
     query: { staleTime: 30_000 },
   });
 
+  const { data: cUSDTOperatorApproved } = useReadContract({
+    address: CONTRACTS.cUSDT,
+    abi: TokenABI.abi,
+    functionName: "isOperator",
+    args: [address, CONTRACTS.pool],
+    query: {
+      enabled: !!address,
+      staleTime: 30_000,
+    },
+  });
+
+  const { data: cETHOperatorApproved } = useReadContract({
+    address: CONTRACTS.cETH,
+    abi: TokenABI.abi,
+    functionName: "isOperator",
+    args: [address, CONTRACTS.pool],
+    query: {
+      enabled: !!address,
+      staleTime: 30_000,
+    },
+  });
+
+  const operatorByDirection = useMemo(
+    () => ({
+      aToB: Boolean(cUSDTOperatorApproved),
+      bToA: Boolean(cETHOperatorApproved),
+    }),
+    [cUSDTOperatorApproved, cETHOperatorApproved],
+  );
+
   const swap = useCallback(async (
     amountIn: bigint,
     minAmountOut: bigint,
@@ -61,21 +91,18 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
     setSwapSuccess(false);
     try {
       setTxStep(1);
-      const encAmountIn = await encryptWith(builder => builder.add64(amountIn));
-      if (!encAmountIn) throw new Error("Encryption failed");
-      const encMinAmountOut = await encryptWith(builder => builder.add64(minAmountOut));
+      const [encAmountIn, encMinAmountOut] = await Promise.all([
+        encryptWith(builder => builder.add64(amountIn)),
+        encryptWith(builder => builder.add64(minAmountOut)),
+      ]);
+      if (!encAmountIn) throw new Error("Amount encryption failed");
       if (!encMinAmountOut) throw new Error("Encryption failed");
       setTxStep(2);
       if (!ethersProvider) throw new Error("Wallet provider unavailable");
       const tokenAddress = aToB ? CONTRACTS.cUSDT : CONTRACTS.cETH;
 
-      // Skip setOperator if the pool is already approved as operator (saves one tx)
-      const tokenContract = new (await import("ethers")).Contract(
-        tokenAddress,
-        TokenABI.abi,
-        await ethersProvider.getSigner(),
-      );
-      const alreadyOperator: boolean = await tokenContract.isOperator(address, CONTRACTS.pool);
+      // Use cached operator state to avoid extra RPC on every click.
+      const alreadyOperator = aToB ? operatorByDirection.aToB : operatorByDirection.bToA;
       if (!alreadyOperator) {
         const futureTimestamp = BigInt(Math.floor(Date.now() / 1000) + 3600);
         const approvalTx = await writeContractAsync({
@@ -111,7 +138,7 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
     } finally {
       setIsSwapping(false);
     }
-  }, [isConnected, address, canEncrypt, encryptWith, writeContractAsync, poolInitialized]);
+  }, [isConnected, address, canEncrypt, encryptWith, writeContractAsync, poolInitialized, operatorByDirection, ethersProvider]);
 
   const reset = useCallback(() => {
     setTxStep(0);
