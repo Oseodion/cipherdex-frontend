@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { CONTRACTS } from "./useCipherDEX";
 import { useWagmiEthers } from "./wagmi/useWagmiEthers";
@@ -30,7 +30,11 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
   });
 
   const { writeContractAsync } = useWriteContract();
-  const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
+  const {
+    isSuccess: isConfirmed,
+    isError: isReceiptError,
+    error: receiptError,
+  } = useWaitForTransactionReceipt({ hash: txHash });
 
   const { data: poolInitialized } = useReadContract({
     address: CONTRACTS.pool,
@@ -130,15 +134,32 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
       });
       setTxHash(swapTx as `0x${string}`);
       setTxStep(4);
-      await ethersProvider.waitForTransaction(swapTx as string);
-      setSwapSuccess(true);
     } catch (err: any) {
       setSwapError(err?.message || "Swap failed");
       setTxStep(0);
-    } finally {
+      setTxHash(undefined);
       setIsSwapping(false);
     }
   }, [isConnected, address, canEncrypt, encryptWith, writeContractAsync, poolInitialized, operatorByDirection, ethersProvider]);
+
+  useEffect(() => {
+    if (!txHash) return;
+    if (isConfirmed) {
+      // Mark final step as completed in the stepper UI.
+      setTxStep(5);
+      setSwapSuccess(true);
+      setSwapError(null);
+      setIsSwapping(false);
+      return;
+    }
+    if (isReceiptError) {
+      setSwapError(receiptError?.message || "Swap confirmation failed");
+      setTxStep(0);
+      setTxHash(undefined);
+      setIsSwapping(false);
+      return;
+    }
+  }, [txHash, isConfirmed, isReceiptError, receiptError]);
 
   const reset = useCallback(() => {
     setTxStep(0);

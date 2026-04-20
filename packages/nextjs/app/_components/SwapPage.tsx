@@ -2051,7 +2051,7 @@ export function SwapPage() {
                         "Encrypting amount with FHE",
                         "Setting token operator on-chain",
                         "Broadcasting encrypted swap tx",
-                        "Settlement confirmed",
+                        "Waiting for settlement confirmation",
                       ].map((label, i) => {
                         const stepNum = i + 1;
                         const isDone = realTxStep > stepNum;
