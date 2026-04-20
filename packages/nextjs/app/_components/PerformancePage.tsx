@@ -60,8 +60,8 @@ export function PerformancePage({ isMobile }: { isMobile?: boolean }) {
         }}
       >
         {[
-          { label: "Total Trades", value: loading ? "0" : totalTrades.toString(), sub: "All time" },
-          { label: "Active Traders", value: loading ? "0" : activeTraders.toString(), sub: "Unique addresses" },
+          { label: "Total Trades", value: totalTrades.toString(), sub: "All time" },
+          { label: "Active Traders", value: activeTraders.toString(), sub: "Unique addresses" },
           { label: "Reserve cUSDT", value: snapshotADisplay, sub: "Snapshot" },
           { label: "Reserve cETH", value: snapshotBDisplay, sub: "Snapshot" },
         ].map(s => (
@@ -185,7 +185,9 @@ export function PerformancePage({ isMobile }: { isMobile?: boolean }) {
         >
           Recent Swaps
         </div>
-        {loading && <div style={{ fontSize: "13px", color: "#3a3832", fontFamily: "monospace" }}>Loading…</div>}
+        {loading && recentTrades.length === 0 && (
+          <div style={{ fontSize: "13px", color: "#3a3832", fontFamily: "monospace" }}>Loading…</div>
+        )}
         {!loading && recentTrades.length === 0 && (
           <div style={{ fontSize: "13px", color: "#3a3832", fontFamily: "monospace" }}>No swaps recorded yet</div>
         )}

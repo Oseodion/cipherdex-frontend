@@ -30,6 +30,7 @@ export function SwapPage() {
   const [showSlippage, setShowSlippage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
 
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
@@ -49,7 +50,7 @@ export function SwapPage() {
   // --- Balances (must be declared before useFaucet so refetch is available) ---
   const [pendingReveal, setPendingReveal] = useState<number | null>(null);
   const [decryptRequest, setDecryptRequest] = useState<number | null>(null);
-  const { cUSDTBalance, cETHBalance, isDecrypting, decrypt, refetch } = useBalances(
+  const { cUSDTBalance, cETHBalance, isDecrypting, canDecrypt, decrypt, refetch } = useBalances(
     address,
     isConnected,
     chainId,
@@ -267,9 +268,15 @@ export function SwapPage() {
   async function revealBalance(n: number) {
     if (!isConnected || !address) return;
     if (revealing[n] || runningReveal.current[n]) return;
+    setDecryptUiError(null);
     if (revealed[n]) {
       setRevealed(prev => ({ ...prev, [n]: false }));
       setDisplayBals(prev => ({ ...prev, [n]: "▓▓▓▓▓▓▓▓" }));
+      return;
+    }
+
+    if (fhevmStatus !== "ready" || !canDecrypt) {
+      setDecryptUiError("FHE wallet session not ready yet. Reconnect wallet and try reveal again.");
       return;
     }
 
@@ -278,9 +285,16 @@ export function SwapPage() {
     setDecryptRequest(n);
 
     try {
-      await decrypt();
+      const timeoutMs = 20000;
+      await Promise.race([
+        decrypt(),
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error("Decrypt request timed out on mobile wallet")), timeoutMs);
+        }),
+      ]);
     } catch (err) {
       console.error("Balance reveal failed", err);
+      setDecryptUiError("Decrypt confirmation did not complete. Please retry in wallet browser.");
       setDecryptRequest(null);
       setRevealing(prev => ({ ...prev, [n]: false }));
     }
@@ -1892,6 +1906,19 @@ export function SwapPage() {
                       )}
                     </div>
                   )}
+                  {decryptUiError && isConnected && (
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        color: "rgba(239,68,68,0.8)",
+                        fontFamily: "monospace",
+                        fontSize: "10px",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {decryptUiError}
+                    </div>
+                  )}
 
                   {/* Pre-connect / FHE setup notice — hidden once FHE is ready */}
                   {fhevmStatus !== "ready" && !isRealSwapping && !swapSuccess && (
@@ -2256,7 +2283,7 @@ export function SwapPage() {
                           </div>
                           <button
                             onClick={() => revealBalance(token.n)}
-                            disabled={revealing[token.n] || (isDecrypting && !revealed[token.n])}
+                            disabled={revealing[token.n]}
                             style={{
                               fontSize: "9px",
                               fontWeight: 700,
@@ -2267,8 +2294,7 @@ export function SwapPage() {
                                 : "1px solid rgba(255,255,245,0.05)",
                               borderRadius: "5px",
                               padding: "3px 9px",
-                              cursor:
-                                revealing[token.n] || (isDecrypting && !revealed[token.n]) ? "not-allowed" : "pointer",
+                              cursor: revealing[token.n] ? "not-allowed" : "pointer",
                               marginTop: "3px",
                               display: "block",
                               width: "100%",
