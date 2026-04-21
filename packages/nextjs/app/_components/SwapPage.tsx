@@ -34,6 +34,8 @@ export function SwapPage() {
   const revealTimeoutRef = useRef<number | null>(null);
   const [fheUnsupportedReason, setFheUnsupportedReason] = useState<string | null>(null);
   const [swapClickAcknowledged, setSwapClickAcknowledged] = useState(false);
+  const [swapPendingHint, setSwapPendingHint] = useState<string | null>(null);
+  const swapPendingTimeoutRef = useRef<number | null>(null);
 
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
@@ -412,7 +414,15 @@ export function SwapPage() {
   // --- Swap ---
   async function doSwap() {
     setSwapClickAcknowledged(true);
+    setSwapPendingHint("Preparing encrypted swap…");
     setIsSubmitting(true);
+    if (swapPendingTimeoutRef.current) {
+      window.clearTimeout(swapPendingTimeoutRef.current);
+      swapPendingTimeoutRef.current = null;
+    }
+    swapPendingTimeoutRef.current = window.setTimeout(() => {
+      setSwapPendingHint("Still encrypting… this can take a bit on some wallets.");
+    }, 12000);
     // Let React paint the button state before heavy FHE work starts.
     await new Promise<void>(resolve => {
       if (typeof window === "undefined") {
@@ -440,11 +450,24 @@ export function SwapPage() {
       const minOut = minReceived ? BigInt(Math.floor(parseFloat(minReceived) * 10 ** outputDecimals)) : BigInt(0);
       await swap(amountInBig, minOut, isAToB);
     } finally {
+      if (swapPendingTimeoutRef.current) {
+        window.clearTimeout(swapPendingTimeoutRef.current);
+        swapPendingTimeoutRef.current = null;
+      }
       setIsSubmitting(false);
       setSwapClickAcknowledged(false);
+      setSwapPendingHint(null);
     }
     // amountOut count-up is driven by the swapSuccess effect above
   }
+
+  useEffect(() => {
+    return () => {
+      if (swapPendingTimeoutRef.current) {
+        window.clearTimeout(swapPendingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const slideInStyle = `
   @keyframes slideIn {
@@ -2043,6 +2066,19 @@ export function SwapPage() {
                           ? "Retry Swap"
                           : "Swap Privately"}
                   </button>
+                  {swapClickAcknowledged && !isRealSwapping && swapPendingHint && (
+                    <div
+                      style={{
+                        marginTop: "7px",
+                        fontSize: "10px",
+                        color: "#6b6860",
+                        fontFamily: "monospace",
+                        textAlign: "center",
+                      }}
+                    >
+                      {swapPendingHint}
+                    </div>
+                  )}
 
                   {/* FHE init error */}
                   {fhevmStatus === "error" && isConnected && (

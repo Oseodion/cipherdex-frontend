@@ -34,7 +34,6 @@ export function LiquidityPoolsPage({
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastAddedSummary, setLastAddedSummary] = useState<string | null>(null);
   const [localNetAdded, setLocalNetAdded] = useState<{ usdt: number; eth: number }>({ usdt: 0, eth: 0 });
   const localLiquidityKey = useMemo(
     () => `cipherdex_local_liquidity_net:${(address ?? "guest").toLowerCase()}`,
@@ -85,6 +84,7 @@ export function LiquidityPoolsPage({
     : "—";
 
   async function handleAdd() {
+    let slowEncryptTimer: number | null = null;
     setIsLoading(true);
     setError(null);
     setStatus("Starting add liquidity…");
@@ -103,14 +103,20 @@ export function LiquidityPoolsPage({
     try {
       const rawA = BigInt(Math.floor(parseFloat(amtA) * 1e6));
       const rawB = BigInt(Math.floor(parseFloat(amtB) * 1e9));
+      slowEncryptTimer =
+        typeof window !== "undefined"
+          ? window.setTimeout(() => {
+              setStatus("Still encrypting amounts… this can take a bit on some wallets.");
+            }, 12000)
+          : null;
 
       // Encrypt before any transactions — same pattern as useSwap.ts.
       // Doing operator approvals first invalidates the ethersSigner's underlying
       // provider (wagmi updates walletClient after each tx), which causes the
       // relayer fetch inside encrypt() to fail with a COEP/SSL error.
       setStatus("Encrypting amounts…");
-      const encA = await encryptWith(b => b.add64(rawA));
-      const encB = await encryptWith(b => b.add64(rawB));
+      const [encA, encB] = await Promise.all([encryptWith(b => b.add64(rawA)), encryptWith(b => b.add64(rawB))]);
+      if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       if (!encA || !encB) throw new Error("Encryption failed");
 
       const futureTs = BigInt(Math.floor(Date.now() / 1000) + 3600);
@@ -154,7 +160,6 @@ export function LiquidityPoolsPage({
       await ethersProvider.waitForTransaction(tx as string);
       const addedUSDT = parseFloat(amtA) || 0;
       const addedETH = parseFloat(amtB) || 0;
-      setLastAddedSummary(`${parseFloat(amtA).toLocaleString()} cUSDT + ${parseFloat(amtB)} cETH`);
       setLocalNetAdded(prev => {
         const next = { usdt: prev.usdt + addedUSDT, eth: prev.eth + addedETH };
         if (typeof window !== "undefined") {
@@ -171,11 +176,13 @@ export function LiquidityPoolsPage({
       setError(msg.includes("gas") ? "Transaction failed — FHE gas limit exceeded. Try again." : msg);
       setStatus(null);
     } finally {
+      if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       setIsLoading(false);
     }
   }
 
   async function handleRemove() {
+    let slowEncryptTimer: number | null = null;
     setIsLoading(true);
     setError(null);
     setStatus("Starting remove liquidity…");
@@ -193,8 +200,15 @@ export function LiquidityPoolsPage({
     }
     try {
       const sharesToRemove = BigInt(Math.floor(parseFloat(removeShares)));
+      slowEncryptTimer =
+        typeof window !== "undefined"
+          ? window.setTimeout(() => {
+              setStatus("Still encrypting share amount… this can take a bit on some wallets.");
+            }, 12000)
+          : null;
       setStatus("Encrypting share amount…");
       const encShares = await encryptWith(b => b.add64(sharesToRemove));
+      if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       if (!encShares) throw new Error("Encryption failed");
 
       setStatus("Submitting removeLiquidity…");
@@ -215,6 +229,7 @@ export function LiquidityPoolsPage({
       setError(msg.includes("gas") ? "Transaction failed — FHE gas limit exceeded. Try again." : msg);
       setStatus(null);
     } finally {
+      if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       setIsLoading(false);
     }
   }
@@ -374,11 +389,6 @@ export function LiquidityPoolsPage({
           <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>
             Encrypted - shares not publicly visible
           </div>
-          {lastAddedSummary && (
-            <div style={{ fontSize: "10px", color: "#FFD208", marginTop: "6px", fontFamily: "monospace" }}>
-              Last added (local): {lastAddedSummary}
-            </div>
-          )}
         </div>
         <div
           style={{
