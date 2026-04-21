@@ -1158,7 +1158,7 @@ export function SwapPage() {
                 }}
               >
                 {/* Balances card */}
-                <div style={{ ...card, display: "flex", flexDirection: "column", minHeight: "286px" }}>
+                <div style={{ ...card, display: "flex", flexDirection: "column" }}>
                   <div style={cardShine} />
                   <div
                     style={{
@@ -1222,7 +1222,7 @@ export function SwapPage() {
                   <button
                     onClick={() => setActiveNav("Swap")}
                     style={{
-                      marginTop: "auto",
+                      marginTop: "12px",
                       width: "100%",
                       background: "#FFD208",
                       border: "none",
