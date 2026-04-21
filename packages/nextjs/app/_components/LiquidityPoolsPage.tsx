@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toHex, useFHEEncryption } from "@fhevm-sdk";
 import type { FhevmInstance } from "@fhevm-sdk";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
@@ -35,6 +35,29 @@ export function LiquidityPoolsPage({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAddedSummary, setLastAddedSummary] = useState<string | null>(null);
+  const [localNetAdded, setLocalNetAdded] = useState<{ usdt: number; eth: number }>({ usdt: 0, eth: 0 });
+  const localLiquidityKey = useMemo(
+    () => `cipherdex_local_liquidity_net:${(address ?? "guest").toLowerCase()}`,
+    [address],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = localStorage.getItem(localLiquidityKey);
+    if (!raw) {
+      setLocalNetAdded({ usdt: 0, eth: 0 });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      setLocalNetAdded({
+        usdt: Number(parsed?.usdt ?? 0),
+        eth: Number(parsed?.eth ?? 0),
+      });
+    } catch {
+      setLocalNetAdded({ usdt: 0, eth: 0 });
+    }
+  }, [localLiquidityKey]);
 
   const { encryptWith, canEncrypt } = useFHEEncryption({
     instance: fhevmInstance,
@@ -64,7 +87,14 @@ export function LiquidityPoolsPage({
   async function handleAdd() {
     setIsLoading(true);
     setError(null);
-    setStatus(null);
+    setStatus("Starting add liquidity…");
+    await new Promise<void>(resolve => {
+      if (typeof window === "undefined") {
+        resolve();
+        return;
+      }
+      window.requestAnimationFrame(() => resolve());
+    });
     if (!isConnected || !canEncrypt || !ethersProvider || !address) {
       setError("Wallet or FHE not ready — ensure wallet is connected and FHE instance is initialized.");
       setIsLoading(false);
@@ -122,7 +152,16 @@ export function LiquidityPoolsPage({
         args: [toHex(encA.handles[0]), toHex(encA.inputProof), toHex(encB.handles[0]), toHex(encB.inputProof)],
       });
       await ethersProvider.waitForTransaction(tx as string);
+      const addedUSDT = parseFloat(amtA) || 0;
+      const addedETH = parseFloat(amtB) || 0;
       setLastAddedSummary(`${parseFloat(amtA).toLocaleString()} cUSDT + ${parseFloat(amtB)} cETH`);
+      setLocalNetAdded(prev => {
+        const next = { usdt: prev.usdt + addedUSDT, eth: prev.eth + addedETH };
+        if (typeof window !== "undefined") {
+          localStorage.setItem(localLiquidityKey, JSON.stringify(next));
+        }
+        return next;
+      });
       setStatus("Liquidity added. Your encrypted LP share increased — reserve stats update on next swap.");
       onSuccess?.();
       window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
@@ -139,7 +178,14 @@ export function LiquidityPoolsPage({
   async function handleRemove() {
     setIsLoading(true);
     setError(null);
-    setStatus(null);
+    setStatus("Starting remove liquidity…");
+    await new Promise<void>(resolve => {
+      if (typeof window === "undefined") {
+        resolve();
+        return;
+      }
+      window.requestAnimationFrame(() => resolve());
+    });
     if (!isConnected || !canEncrypt || !ethersProvider) {
       setError("Wallet or FHE not ready — ensure wallet is connected and FHE instance is initialized.");
       setIsLoading(false);
@@ -270,7 +316,7 @@ export function LiquidityPoolsPage({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
+          gridTemplateColumns: isMobile ? "1fr" : "repeat(4,1fr)",
           gap: "10px",
           marginBottom: "20px",
         }}
@@ -278,6 +324,11 @@ export function LiquidityPoolsPage({
         {stat("Reserve cUSDT", snapshotADisplay, "Plaintext snapshot — refreshes on swap")}
         {stat("Reserve cETH", snapshotBDisplay, "Plaintext snapshot — refreshes on swap")}
         {stat("Total Pool Shares", totalSharesDisplay, "May lag depending on contract snapshot behavior")}
+        {stat(
+          "Added Here (This Wallet + Browser)",
+          `${localNetAdded.usdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${localNetAdded.eth.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
+          "Browser-estimated helper, resets per wallet/browser and is not on-chain all-time",
+        )}
       </div>
       <div
         style={{

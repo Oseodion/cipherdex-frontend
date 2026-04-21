@@ -38,11 +38,29 @@ export function SwapPage() {
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
   const provider = useMemo(() => {
+    // Always prefer the active wagmi connector provider.
+    // Using window.ethereum first can lock us to whichever extension injected first.
+    if (connectorClient) {
+      const connectorProvider =
+        (connectorClient as any).transport?.value?.provider ??
+        (connectorClient as any).transport?.provider ??
+        (connectorClient as any).transport;
+      if (connectorProvider) return connectorProvider;
+    }
     const globalProvider = typeof window !== "undefined" ? (window as any).ethereum : undefined;
     if (globalProvider) return globalProvider;
-    if (!connectorClient) return undefined;
-    return (connectorClient as any).transport?.value?.provider ?? (connectorClient as any).transport;
+    return undefined;
   }, [connectorClient]);
+  const activeProviderLabel = useMemo(() => {
+    if (!provider) return "None";
+    const p = provider as any;
+    if (p.isRabby) return "Rabby";
+    if (p.isOkxWallet || p.isOKXWallet) return "OKX";
+    if (p.isCoinbaseWallet) return "Coinbase";
+    if (p.isMetaMask) return "MetaMask";
+    if (p.isWalletConnect) return "WalletConnect";
+    return "Injected/EIP-1193";
+  }, [provider]);
 
   const { instance: fhevmInstance, status: fhevmStatus, error: fhevmError } = useFhevm({
     provider,
@@ -395,6 +413,14 @@ export function SwapPage() {
   async function doSwap() {
     setSwapClickAcknowledged(true);
     setIsSubmitting(true);
+    // Let React paint the button state before heavy FHE work starts.
+    await new Promise<void>(resolve => {
+      if (typeof window === "undefined") {
+        resolve();
+        return;
+      }
+      window.requestAnimationFrame(() => resolve());
+    });
     try {
       if (fheUnsupportedReason) {
         setIsSubmitting(false);
@@ -1945,6 +1971,29 @@ export function SwapPage() {
                       </div>
                     )}
                   </div>
+                  {process.env.NODE_ENV !== "production" && (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          color: "#6b6860",
+                          fontFamily: "monospace",
+                          background: "rgba(255,255,245,0.03)",
+                          border: "1px solid rgba(255,255,245,0.08)",
+                          borderRadius: "6px",
+                          padding: "2px 6px",
+                        }}
+                      >
+                        Provider: {activeProviderLabel}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Swap button */}
                   <button
