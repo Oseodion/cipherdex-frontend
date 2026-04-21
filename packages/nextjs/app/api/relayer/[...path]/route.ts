@@ -15,23 +15,35 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function isAllowedPath(path: string): boolean {
-  return path.startsWith("v2/");
+  if (!path || path.includes("..")) {
+    return false;
+  }
+  // Zama may add routes under v2/ or elsewhere; avoid SSRF by fixing upstream host only.
+  return /^[a-zA-Z0-9._\-/]+$/.test(path);
 }
 
 async function forward(req: NextRequest, pathSegments: string[]): Promise<Response> {
   const path = pathSegments.join("/");
   if (!path || !isAllowedPath(path)) {
-    return NextResponse.json({ error: "Only /v2/* relayer paths are allowed." }, { status: 403 });
+    return NextResponse.json({ error: "Relayer path not allowed." }, { status: 403 });
   }
 
   const target = `${UPSTREAM_BASE}/${path}${req.nextUrl.search}`;
   const method = req.method.toUpperCase();
-  const contentType = req.headers.get("content-type");
-
   const headers = new Headers();
-  if (contentType) {
-    headers.set("content-type", contentType);
+  const forwardNames = ["content-type", "accept", "user-agent", "authorization"];
+  for (const name of forwardNames) {
+    const v = req.headers.get(name);
+    if (v) {
+      headers.set(name, v);
+    }
   }
+  req.headers.forEach((value, key) => {
+    const k = key.toLowerCase();
+    if (k.startsWith("x-") && !headers.has(key)) {
+      headers.set(key, value);
+    }
+  });
 
   let body: ArrayBuffer | undefined;
   if (method !== "GET" && method !== "HEAD") {

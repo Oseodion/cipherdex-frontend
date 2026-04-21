@@ -292,17 +292,22 @@ export const createFhevmInstance = async (parameters: {
   const pub = await publicKeyStorageGet(aclAddress);
   throwIfAborted();
 
-  // Relayer URL: COEP (require-corp) pages often cannot fetch Zama directly ("Failed to fetch").
-  // Default in the browser: same-origin /api/relayer proxy (see packages/nextjs/app/api/relayer).
-  // Override: NEXT_PUBLIC_RELAYER_URL=https://relayer.testnet.zama.org (direct, e.g. static IPFS build without API routes).
+  // Relayer URL:
+  // - Default: Zama testnet URL from the SDK (same as before). Needed for decrypt + relayer flows that expect that host.
+  // - Optional same-origin proxy: set NEXT_PUBLIC_USE_RELAYER_PROXY=true to route via /api/relayer when COEP blocks
+  //   direct browser fetches to Zama (swap input-proof "Failed to fetch"). Decrypt may misbehave if the proxy is too
+  //   narrow; keep proxy opt-in so reveal balance works unless you need the proxy for swaps.
+  // - Override: NEXT_PUBLIC_RELAYER_URL=https://relayer.testnet.zama.org
   const envRelayer =
     typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RELAYER_URL?.trim()
       ? process.env.NEXT_PUBLIC_RELAYER_URL.trim()
       : undefined;
   const ipfsStatic =
     typeof process !== "undefined" && process.env?.NEXT_PUBLIC_IPFS_BUILD === "true";
+  const useSameOriginProxy =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_USE_RELAYER_PROXY === "true";
   const sameOriginProxy =
-    typeof window !== "undefined" && !ipfsStatic
+    typeof window !== "undefined" && !ipfsStatic && useSameOriginProxy
       ? `${window.location.origin}/api/relayer`
       : undefined;
   const relayerBase = envRelayer ?? sameOriginProxy ?? relayerSDK.SepoliaConfig.relayerUrl;

@@ -14,6 +14,14 @@ import { useWagmiEthers } from "~~/hooks/wagmi/useWagmiEthers";
 const ADD_GAS = 10_000_000n;
 const REMOVE_GAS = 10_000_000n;
 
+/** One-line context under the stat grid (not repeated inside each card). */
+const POOL_STATS_SUMMARY = "Public on-chain fields only - rough signals, not decrypted TVL";
+
+/** Mask line for the scramble effect; keeps spaces and ASCII hyphens so width stays stable. */
+function scrambleDisclosure(text: string): string {
+  return text.replace(/[^ \-]/g, "▓");
+}
+
 export function LiquidityPoolsPage({
   fhevmInstance,
   isMobile,
@@ -37,6 +45,9 @@ export function LiquidityPoolsPage({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localNetAdded, setLocalNetAdded] = useState<{ usdt: number; eth: number }>({ usdt: 0, eth: 0 });
+  /** Hover / tap reveals readable disclosure; otherwise masked text (no layout shift). */
+  const [hoveredStat, setHoveredStat] = useState<number | null>(null);
+  const [pinnedStat, setPinnedStat] = useState<number | null>(null);
   const localLiquidityKey = useMemo(
     () => `cipherdex_local_liquidity_net:${(address ?? "guest").toLowerCase()}`,
     [address],
@@ -271,32 +282,95 @@ export function LiquidityPoolsPage({
     (status.startsWith("Starting add liquidity") || status.startsWith("Starting remove liquidity"));
   const showLiquidityButtonSpinner = isLoading && !liquidityStartingPhase;
 
-  const stat = (label: string, value: string, sub?: string) => (
-    <div
-      style={{
-        background: "#171714",
-        borderRadius: "12px",
-        padding: "14px 16px",
-        border: "1px solid rgba(255,255,245,0.05)",
-      }}
-    >
+  const activeStatIndex = hoveredStat !== null ? hoveredStat : pinnedStat;
+
+  const stat = (i: number, label: string, value: string, disclosure: string) => {
+    const reveal = activeStatIndex === i;
+    const masked = scrambleDisclosure(disclosure);
+    return (
       <div
+        key={i}
+        onMouseEnter={() => setHoveredStat(i)}
+        onMouseLeave={() => setHoveredStat(null)}
+        onClick={() => setPinnedStat(p => (p === i ? null : i))}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setPinnedStat(p => (p === i ? null : i));
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`${label}: ${value}. ${reveal ? disclosure : "Masked note, hover or activate to read"}`}
         style={{
-          fontSize: "9px",
-          color: "#3a3832",
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          fontFamily: "monospace",
-          marginBottom: "8px",
+          background: "#171714",
+          borderRadius: "12px",
+          padding: "14px 16px",
+          border: "1px solid rgba(255,255,245,0.05)",
+          cursor: "pointer",
+          textAlign: "left" as const,
         }}
       >
-        {label}
+        <div
+          style={{
+            fontSize: "9px",
+            color: "#3a3832",
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            fontFamily: "monospace",
+            marginBottom: "8px",
+          }}
+        >
+          {label}
+        </div>
+        <div style={{ fontSize: "20px", fontWeight: 700, fontFamily: "monospace", lineHeight: 1.2 }}>{value}</div>
+        <div
+          style={{
+            marginTop: "12px",
+            paddingTop: "12px",
+            borderTop: "1px solid rgba(255,255,245,0.06)",
+          }}
+        >
+          <div style={{ position: "relative", minHeight: "44px" }}>
+            <div
+              style={{
+                fontSize: "10px",
+                lineHeight: 1.45,
+                fontFamily: "'Cabinet Grotesk',sans-serif",
+                letterSpacing: "0.02em",
+                color: "#7a7670",
+                opacity: reveal ? 0 : 0.55,
+                transition: "opacity 0.2s ease",
+                userSelect: "none",
+              }}
+              aria-hidden
+            >
+              {masked}
+            </div>
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: 0,
+                fontSize: "10px",
+                lineHeight: 1.45,
+                fontFamily: "'Cabinet Grotesk',sans-serif",
+                letterSpacing: "0.02em",
+                color: "#a8a49a",
+                opacity: reveal ? 1 : 0,
+                transition: "opacity 0.2s ease",
+                pointerEvents: "none",
+              }}
+            >
+              {disclosure}
+            </div>
+          </div>
+        </div>
       </div>
-      <div style={{ fontSize: "20px", fontWeight: 700, fontFamily: "monospace" }}>{value}</div>
-      {sub && <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>{sub}</div>}
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={{ width: "100%" }}>
@@ -355,50 +429,41 @@ export function LiquidityPoolsPage({
         }}
       >
         {stat(
+          0,
           "Reserve cUSDT",
           snapshotADisplay,
-          "On-chain snapshot divisor - not full TVL; moves with swap-driven updates",
+          "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
         )}
         {stat(
+          1,
           "Reserve cETH",
           snapshotBDisplay,
-          "On-chain snapshot divisor - not full TVL; moves with swap-driven updates",
+          "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
         )}
         {stat(
+          2,
           "Total Pool Shares",
           totalSharesDisplay,
-          "Plaintext totalShares field - may not reflect all encrypted LP mints",
+          "Plaintext totalShares field - may not reflect all encrypted LP mints.",
         )}
         {stat(
-          "Added Here (This Wallet + Browser)",
+          3,
+          "Session adds (this device)",
           `${localNetAdded.usdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${localNetAdded.eth.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
-          "Browser-estimated helper, resets per wallet/browser and is not on-chain all-time",
+          "Estimated from this browser for this wallet only - not full on-chain history.",
         )}
       </div>
-      <div
+      <p
         style={{
           fontSize: "11px",
-          color: "#3a3832",
-          lineHeight: "1.55",
-          marginBottom: "18px",
-          letterSpacing: "0.01em",
-          padding: "12px 14px",
-          background: "rgba(255,255,245,0.03)",
-          border: "1px solid rgba(255,255,245,0.06)",
-          borderRadius: "10px",
+          color: "#5c5952",
+          lineHeight: 1.45,
+          margin: "0 0 18px 0",
+          letterSpacing: "0.02em",
         }}
       >
-        <span style={{ color: "#6b6860", fontWeight: 700, fontSize: "10px", letterSpacing: "0.06em" }}>
-          ABOUT THESE STATS
-        </span>
-        <p style={{ margin: "8px 0 0 0", color: "#6b6860" }}>
-          The big numbers are <strong style={{ color: "#8a8680" }}>public on-chain fields</strong> the pool uses for
-          math (snapshots + totalShares). They are <strong style={{ color: "#8a8680" }}>not</strong> a live decrypted
-          view of the full pool. Encrypted liquidity and per-wallet LP shares use a different representation - so
-          these cards are a <strong style={{ color: "#8a8680" }}>rough dashboard signal</strong>, not a precise balance
-          sheet. We refresh them often after swaps and liquidity actions.
-        </p>
-      </div>
+        {POOL_STATS_SUMMARY}
+      </p>
 
       {/* Your position */}
       <div

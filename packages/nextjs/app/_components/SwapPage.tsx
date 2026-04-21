@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { AuditViewPage } from "./AuditViewPage";
 import { LiquidityPoolsPage } from "./LiquidityPoolsPage";
@@ -30,6 +30,7 @@ export function SwapPage() {
   const [slippage, setSlippage] = useState("0.5");
   const [showSlippage, setShowSlippage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [mobileDesktopHintDismissed, setMobileDesktopHintDismissed] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
   const revealTimeoutRef = useRef<number | null>(null);
@@ -54,16 +55,6 @@ export function SwapPage() {
     if (globalProvider) return globalProvider;
     return undefined;
   }, [connectorClient]);
-  const activeProviderLabel = useMemo(() => {
-    if (!provider) return "None";
-    const p = provider as any;
-    if (p.isRabby) return "Rabby";
-    if (p.isOkxWallet || p.isOKXWallet) return "OKX";
-    if (p.isCoinbaseWallet) return "Coinbase";
-    if (p.isMetaMask) return "MetaMask";
-    if (p.isWalletConnect) return "WalletConnect";
-    return "Injected/EIP-1193";
-  }, [provider]);
 
   const { instance: fhevmInstance, status: fhevmStatus, error: fhevmError } = useFhevm({
     provider,
@@ -75,12 +66,15 @@ export function SwapPage() {
   // --- Balances (must be declared before useFaucet so refetch is available) ---
   const [pendingReveal, setPendingReveal] = useState<number | null>(null);
   const [decryptRequest, setDecryptRequest] = useState<number | null>(null);
-  const { cUSDTBalance, cETHBalance, isDecrypting, canDecrypt, decrypt, refetch } = useBalances(
-    address,
-    isConnected,
-    chainId,
-    fhevmInstance,
-  );
+  const {
+    cUSDTBalance,
+    cETHBalance,
+    isDecrypting,
+    canDecrypt,
+    decrypt,
+    decryptError,
+    refetch,
+  } = useBalances(address, isConnected, chainId, fhevmInstance);
 
   // --- Faucet: refetch balances on confirmed claim ---
   const handleFaucetSuccess = useCallback(() => {
@@ -165,6 +159,18 @@ export function SwapPage() {
     setPendingReveal(decryptRequest);
     setDecryptRequest(null);
   }, [decryptRequest, isDecrypting, cUSDTBalance, cETHBalance]);
+
+  useEffect(() => {
+    if (decryptRequest === null || !decryptError) return;
+    const n = decryptRequest;
+    setDecryptUiError(decryptError);
+    setDecryptRequest(null);
+    setRevealing(prev => ({ ...prev, [n]: false }));
+    if (revealTimeoutRef.current) {
+      window.clearTimeout(revealTimeoutRef.current);
+      revealTimeoutRef.current = null;
+    }
+  }, [decryptRequest, decryptError]);
 
   useEffect(() => {
     if (decryptRequest === null) return;
@@ -339,8 +345,8 @@ export function SwapPage() {
     }));
   }, [heatmapCounts]);
 
-  // --- Mobile detection ---
-  useEffect(() => {
+  // --- Mobile detection (layout effect so width is correct before first paint; no sessionStorage on dismiss so refresh shows the hint again) ---
+  useLayoutEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
@@ -1010,6 +1016,67 @@ export function SwapPage() {
         </header>
 
         <main style={{ padding: isMobile ? "14px 14px 80px" : "24px", flex: 1 }}>
+          {isMobile && !mobileDesktopHintDismissed && (
+            <div
+              role="status"
+              style={{
+                marginBottom: "16px",
+                padding: "12px 14px",
+                borderRadius: "12px",
+                background: "rgba(255,210,8,0.07)",
+                border: "1px solid rgba(255,210,8,0.22)",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "12px",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", minWidth: 0 }}>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFD208"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ flexShrink: 0, marginTop: "1px" }}
+                >
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <path d="M8 21h8" />
+                  <path d="M12 17v4" />
+                </svg>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#f0ede6", marginBottom: "4px" }}>
+                    Best on desktop
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#8a8680", lineHeight: 1.45 }}>
+                    Swaps, encrypted balances, and pool hints need a full desktop browser. For the full CipherDEX
+                    experience, open this app on a computer.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileDesktopHintDismissed(true)}
+                style={{
+                  flexShrink: 0,
+                  background: "rgba(0,0,0,0.25)",
+                  border: "1px solid rgba(255,255,245,0.12)",
+                  borderRadius: "8px",
+                  color: "#f0ede6",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontFamily: "'Cabinet Grotesk',sans-serif",
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          )}
           {/* Routed sub-pages */}
           {activeNav === "Transactions" && <TransactionsPage address={address} isMobile={isMobile} />}
           {activeNav === "Liquidity Pools" && (
@@ -1518,12 +1585,24 @@ export function SwapPage() {
                   <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>Encrypted on-chain</div>
                 </div>
                 {[
-                  { label: "Your cUSDT", value: cUSDTBalance ?? "-", sub: "Decrypted balance", acc: true },
-                  { label: "Your cETH", value: cETHBalance ?? "-", sub: "Decrypted balance" },
+                  {
+                    label: "Your cUSDT",
+                    value: cUSDTBalance ?? "▓▓▓▓▓▓▓▓",
+                    sub: cUSDTBalance != null ? "Decrypted balance" : "Encrypted on-chain",
+                    acc: true,
+                    placeholder: cUSDTBalance == null,
+                  },
+                  {
+                    label: "Your cETH",
+                    value: cETHBalance ?? "▓▓▓▓▓▓▓▓",
+                    sub: cETHBalance != null ? "Decrypted balance" : "Encrypted on-chain",
+                    placeholder: cETHBalance == null,
+                  },
                   {
                     label: "Active Traders",
                     value: activeTraders.toString(),
                     sub: "On Sepolia",
+                    placeholder: false,
                   },
                 ].map((s, i) => (
                   <div
@@ -1550,16 +1629,24 @@ export function SwapPage() {
                     </div>
                     <div
                       style={{
-                        fontSize: "20px",
+                        fontSize: s.placeholder ? "18px" : "20px",
                         fontWeight: 700,
                         fontFamily: "monospace",
-                        letterSpacing: "-0.02em",
-                        color: s.acc ? "#FFD208" : "#f0ede6",
+                        letterSpacing: s.placeholder ? "2px" : "-0.02em",
+                        color:
+                          s.placeholder ? "rgba(240,237,230,0.22)" : s.acc ? "#FFD208" : "#f0ede6",
                       }}
                     >
                       {s.value}
                     </div>
-                    <div style={{ fontSize: "10px", color: s.acc ? "#FFD208" : "#3a3832", marginTop: "4px" }}>
+                    <div
+                      style={{
+                        fontSize: "10px",
+                        color:
+                          s.placeholder ? "#3a3832" : s.acc ? "#FFD208" : "#3a3832",
+                        marginTop: "4px",
+                      }}
+                    >
                       {s.sub}
                     </div>
                   </div>
@@ -1998,30 +2085,6 @@ export function SwapPage() {
                       </div>
                     )}
                   </div>
-                  {process.env.NODE_ENV !== "production" && (
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          color: "#6b6860",
-                          fontFamily: "monospace",
-                          background: "rgba(255,255,245,0.03)",
-                          border: "1px solid rgba(255,255,245,0.08)",
-                          borderRadius: "6px",
-                          padding: "2px 6px",
-                        }}
-                      >
-                        Provider: {activeProviderLabel}
-                      </span>
-                    </div>
-                  )}
-
                   {/* Swap button */}
                   <button
                     onClick={doSwap}

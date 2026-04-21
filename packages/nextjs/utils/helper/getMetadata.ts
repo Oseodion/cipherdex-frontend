@@ -43,14 +43,9 @@ export const getMetadata = ({
       description: description,
       images: [imageUrl],
     },
+    // Tab icon: public/icon.svg (same mark as sidebar — yellow tile, shield, swap arrows).
     icons: {
-      icon: [
-        {
-          url: "/favicon.png",
-          sizes: "32x32",
-          type: "image/png",
-        },
-      ],
+      icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     },
   };
 };

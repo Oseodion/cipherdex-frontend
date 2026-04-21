@@ -6,15 +6,18 @@ import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { CONTRACTS } from "~~/hooks/useCipherDEX";
 
-type SwapEvent = {
-  trader: string;
-  aToB: boolean;
+type PoolActivityEvent = {
+  kind: "swap" | "add" | "remove";
+  /** trader (swap) or liquidity provider */
+  actor: string;
+  aToB?: boolean;
   timestamp: number;
   txHash: string;
   blockNumber: bigint;
+  logIndex: number;
 };
 
-type Filter = "All" | "cUSDT→cETH" | "cETH→cUSDT";
+type Filter = "All" | "cUSDT→cETH" | "cETH→cUSDT" | "Add liquidity" | "Remove liquidity";
 const LOOKBACK_BLOCKS = 120000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -28,7 +31,7 @@ const formatAge = (ts: number) => {
 
 export function TransactionsPage({ address, isMobile }: { address?: string; isMobile?: boolean }) {
   const publicClient = usePublicClient();
-  const [events, setEvents] = useState<SwapEvent[]>([]);
+  const [events, setEvents] = useState<PoolActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("All");
@@ -42,41 +45,82 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
       const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
       const chunk = 10000n;
       let from = fromBlock;
-      const rawLogs: any[] = [];
+      type Tagged = { log: any; kind: PoolActivityEvent["kind"] };
+      const rawTagged: Tagged[] = [];
 
       while (from <= latest) {
         const to = from + chunk - 1n <= latest ? from + chunk - 1n : latest;
-        const logs = await getContractEvents(publicClient, {
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "Swap",
-          fromBlock: from,
-          toBlock: to,
-          strict: false,
-        });
-        rawLogs.push(...(logs as any[]));
+        const [swapLogs, addLogs, removeLogs] = await Promise.all([
+          getContractEvents(publicClient, {
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "Swap",
+            fromBlock: from,
+            toBlock: to,
+            strict: false,
+          }),
+          getContractEvents(publicClient, {
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "LiquidityAdded",
+            fromBlock: from,
+            toBlock: to,
+            strict: false,
+          }),
+          getContractEvents(publicClient, {
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "LiquidityRemoved",
+            fromBlock: from,
+            toBlock: to,
+            strict: false,
+          }),
+        ]);
+        for (const log of swapLogs as any[]) rawTagged.push({ log, kind: "swap" });
+        for (const log of addLogs as any[]) rawTagged.push({ log, kind: "add" });
+        for (const log of removeLogs as any[]) rawTagged.push({ log, kind: "remove" });
         from = to + 1n;
       }
 
       // Deduplicate by txHash + logIndex
       const seen = new Set<string>();
-      const deduped = rawLogs.filter(log => {
+      const deduped = rawTagged.filter(({ log }) => {
         const key = `${log.transactionHash}:${log.logIndex}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
 
-      const parsed: SwapEvent[] = deduped
-        .map((log: any) => ({
-          trader: log.args?.trader as string,
-          aToB: log.args?.aToB as boolean,
-          timestamp: Number(log.args?.timestamp ?? 0n),
-          txHash: log.transactionHash as string,
-          blockNumber: log.blockNumber as bigint,
-        }))
-        .filter(e => e.timestamp > 0 && e.trader)
-        .sort((a, b) => b.timestamp - a.timestamp);
+      const parsed: PoolActivityEvent[] = [];
+      for (const { log, kind } of deduped) {
+        const ts = Number(log.args?.timestamp ?? 0n);
+        if (ts <= 0) continue;
+        if (kind === "swap") {
+          const actor = log.args?.trader as string | undefined;
+          if (!actor) continue;
+          parsed.push({
+            kind,
+            actor,
+            aToB: log.args?.aToB as boolean,
+            timestamp: ts,
+            txHash: log.transactionHash as string,
+            blockNumber: log.blockNumber as bigint,
+            logIndex: Number(log.logIndex),
+          });
+        } else {
+          const actor = log.args?.provider as string | undefined;
+          if (!actor) continue;
+          parsed.push({
+            kind,
+            actor,
+            timestamp: ts,
+            txHash: log.transactionHash as string,
+            blockNumber: log.blockNumber as bigint,
+            logIndex: Number(log.logIndex),
+          });
+        }
+      }
+      parsed.sort((a, b) => b.timestamp - a.timestamp);
 
       setEvents(parsed);
     } catch (err: any) {
@@ -95,12 +139,18 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
       load();
     };
     window.addEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
-    return () => window.removeEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
+    window.addEventListener("cipherdex:liquidity-changed", onSwapConfirmed);
+    return () => {
+      window.removeEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
+      window.removeEventListener("cipherdex:liquidity-changed", onSwapConfirmed);
+    };
   }, [load]);
 
   const filtered = useMemo(() => {
-    if (filter === "cUSDT→cETH") return events.filter(e => e.aToB);
-    if (filter === "cETH→cUSDT") return events.filter(e => !e.aToB);
+    if (filter === "cUSDT→cETH") return events.filter(e => e.kind === "swap" && e.aToB);
+    if (filter === "cETH→cUSDT") return events.filter(e => e.kind === "swap" && !e.aToB);
+    if (filter === "Add liquidity") return events.filter(e => e.kind === "add");
+    if (filter === "Remove liquidity") return events.filter(e => e.kind === "remove");
     return events;
   }, [events, filter]);
 
@@ -128,13 +178,13 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
           Transaction <span style={{ color: "#FFD208" }}>History</span>
         </h1>
         <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
-          All swaps are encrypted - amounts are never revealed on-chain
+          Swaps and liquidity changes from the pool contract - amounts stay encrypted on-chain
         </p>
       </div>
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-        {(["All", "cUSDT→cETH", "cETH→cUSDT"] as Filter[]).map(f => (
+        {(["All", "cUSDT→cETH", "cETH→cUSDT", "Add liquidity", "Remove liquidity"] as Filter[]).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -222,11 +272,12 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
             )}
 
             {/* Rows */}
-            {filtered.map((ev, i) => {
-              const isOwn = address && ev.trader.toLowerCase() === address.toLowerCase();
+            {filtered.map(ev => {
+              const isOwn = address && ev.actor.toLowerCase() === address.toLowerCase();
+              const rowKey = `${ev.txHash}-${ev.logIndex}`;
               return isMobile ? (
                 <div
-                  key={`${ev.txHash}-${i}`}
+                  key={rowKey}
                   style={{
                     padding: "12px 8px",
                     borderBottom: "1px solid rgba(255,255,245,0.03)",
@@ -259,17 +310,25 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
                         </span>
                       )}
                       <span style={{ fontSize: "12px", fontFamily: "monospace", color: isOwn ? "#FFD208" : "#6b6860" }}>
-                        {truncate(ev.trader)}
+                        {truncate(ev.actor)}
                       </span>
                     </div>
                     <div
                       style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700 }}
                     >
-                      <span style={{ color: ev.aToB ? "#fbbf24" : "#60a5fa" }}>{ev.aToB ? "cUSDT" : "cETH"}</span>
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3a3832" strokeWidth="1.5">
-                        <path d="M1 5h8M6 2l3 3-3 3" />
-                      </svg>
-                      <span style={{ color: ev.aToB ? "#60a5fa" : "#fbbf24" }}>{ev.aToB ? "cETH" : "cUSDT"}</span>
+                      {ev.kind === "swap" ? (
+                        <>
+                          <span style={{ color: ev.aToB ? "#fbbf24" : "#60a5fa" }}>{ev.aToB ? "cUSDT" : "cETH"}</span>
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3a3832" strokeWidth="1.5">
+                            <path d="M1 5h8M6 2l3 3-3 3" />
+                          </svg>
+                          <span style={{ color: ev.aToB ? "#60a5fa" : "#fbbf24" }}>{ev.aToB ? "cETH" : "cUSDT"}</span>
+                        </>
+                      ) : (
+                        <span style={{ color: ev.kind === "add" ? "#4ade80" : "#fb923c" }}>
+                          {ev.kind === "add" ? "Add liquidity" : "Remove liquidity"}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -300,7 +359,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
                 </div>
               ) : (
                 <div
-                  key={`${ev.txHash}-${i}`}
+                  key={rowKey}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 120px 140px 80px 80px",
@@ -329,15 +388,23 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
                       </span>
                     )}
                     <span style={{ fontSize: "12px", fontFamily: "monospace", color: isOwn ? "#FFD208" : "#6b6860" }}>
-                      {truncate(ev.trader)}
+                      {truncate(ev.actor)}
                     </span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: 700 }}>
-                    <span style={{ color: ev.aToB ? "#fbbf24" : "#60a5fa" }}>{ev.aToB ? "cUSDT" : "cETH"}</span>
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3a3832" strokeWidth="1.5">
-                      <path d="M1 5h8M6 2l3 3-3 3" />
-                    </svg>
-                    <span style={{ color: ev.aToB ? "#60a5fa" : "#fbbf24" }}>{ev.aToB ? "cETH" : "cUSDT"}</span>
+                    {ev.kind === "swap" ? (
+                      <>
+                        <span style={{ color: ev.aToB ? "#fbbf24" : "#60a5fa" }}>{ev.aToB ? "cUSDT" : "cETH"}</span>
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3a3832" strokeWidth="1.5">
+                          <path d="M1 5h8M6 2l3 3-3 3" />
+                        </svg>
+                        <span style={{ color: ev.aToB ? "#60a5fa" : "#fbbf24" }}>{ev.aToB ? "cETH" : "cUSDT"}</span>
+                      </>
+                    ) : (
+                      <span style={{ color: ev.kind === "add" ? "#4ade80" : "#fb923c" }}>
+                        {ev.kind === "add" ? "Add liquidity" : "Remove liquidity"}
+                      </span>
+                    )}
                   </div>
                   <div
                     style={{
@@ -368,7 +435,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
 
             {/* Footer */}
             <div style={{ padding: "12px 8px 0", fontSize: "10px", color: "#3a3832", fontFamily: "monospace" }}>
-              {filtered.length} swap{filtered.length !== 1 ? "s" : ""} found · Amounts encrypted by FHE
+              {filtered.length} {filtered.length === 1 ? "activity" : "activities"} found · Amounts encrypted by FHE
             </div>
           </>
         )}
