@@ -76,6 +76,7 @@ export function SwapPage() {
     txStep: realTxStep,
     swapError,
     swapSuccess,
+    isConfirmed,
     canSwap,
     txHash,
     reset: resetSwap,
@@ -180,9 +181,14 @@ export function SwapPage() {
   useEffect(() => {
     refetchRef.current = refetch;
   }, [refetch]);
+  useEffect(() => {
+    if (txHash) {
+      toastTxHashRef.current = txHash;
+    }
+  }, [txHash]);
 
   useEffect(() => {
-    if (!swapSuccess) {
+    if (!(swapSuccess || isConfirmed)) {
       animationRanRef.current = false;
       return;
     }
@@ -201,8 +207,7 @@ export function SwapPage() {
       if (i >= steps) {
         clearInterval(iv);
         setAmountOut(target.toFixed(4));
-        // Save txHash before resetSwap() clears it so toast link stays valid
-        toastTxHashRef.current = txHash;
+        // txHash is mirrored into toastTxHashRef by a dedicated effect.
         setToastVisible(true);
         setTimeout(() => setToastVisible(false), 5000);
         poolRefetch();
@@ -216,7 +221,8 @@ export function SwapPage() {
           const prev = parseInt(localStorage.getItem("cipherdex_fhe_proofs") ?? "0", 10);
           localStorage.setItem("cipherdex_fhe_proofs", String(prev + 2));
         }
-        resetSwap();
+        setTimeout(() => resetSwap(), 300);
+        setAmountIn("");
         setAmountOut(null);
         // Delay refetch so RPC has time to propagate new encrypted handles
         setTimeout(() => {
@@ -231,7 +237,7 @@ export function SwapPage() {
       }
     }, 16);
     return () => clearInterval(iv);
-  }, [swapSuccess, resetSwap, poolRefetch, poolInitRefetch, txHash]);
+  }, [swapSuccess, isConfirmed, resetSwap, poolRefetch, poolInitRefetch]);
 
   // Use live pool snapshots; fall back to a static reference rate when pool isn't initialized
   const RATE = rateUSDTperETH ?? 2341.5;
@@ -2033,7 +2039,7 @@ export function SwapPage() {
                   )}
 
                   {/* TX Steps — shown while swapping or just completed */}
-                  {(isRealSwapping || swapSuccess) && (
+                  {(isRealSwapping || isConfirmed || swapSuccess) && (
                     <div
                       style={{
                         background: "rgba(0,0,0,0.22)",
