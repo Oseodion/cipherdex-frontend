@@ -58,7 +58,7 @@ export const RainbowKitCustomConnectButton = () => {
 
               return (
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                  {/* Balance pill — chain name omitted (always Sepolia) to save space */}
+                  {/* Balance pill - chain name omitted (always Sepolia) to save space */}
                   <div
                     className="wallet-balance-pill"
                     style={{

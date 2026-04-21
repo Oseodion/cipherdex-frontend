@@ -14,7 +14,7 @@ function txHashToHeight(hash: string, bar: number): number {
   for (let i = 0; i < hash.length; i++) {
     h = (h * 31 + hash.charCodeAt(i)) | 0;
   }
-  return 20 + (Math.abs(h) % 71); // 20%–90%
+  return 20 + (Math.abs(h) % 71); // 20%-90%
 }
 
 export function PerformancePage({ isMobile }: { isMobile?: boolean }) {
@@ -34,10 +34,10 @@ export function PerformancePage({ isMobile }: { isMobile?: boolean }) {
 
   const snapshotADisplay = snapshotA
     ? (Number(snapshotA) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })
-    : "—";
+    : "-";
   const snapshotBDisplay = snapshotB
     ? (Number(snapshotB) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 4 })
-    : "—";
+    : "-";
 
   return (
     <div style={{ width: "100%" }}>
@@ -130,7 +130,7 @@ export function PerformancePage({ isMobile }: { isMobile?: boolean }) {
         </div>
       </div>
 
-      {/* Volume chart (encrypted — show block graphic per design rules) */}
+      {/* Volume chart (encrypted - show block graphic per design rules) */}
       <div style={{ ...card, marginBottom: "18px" }}>
         <div
           style={{

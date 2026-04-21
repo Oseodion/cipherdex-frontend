@@ -73,7 +73,7 @@ export function PortfolioPage({
           letterSpacing: encrypted ? "2px" : undefined,
         }}
       >
-        {value ?? "—"}
+        {value ?? "-"}
       </span>
     </div>
   );
@@ -161,7 +161,7 @@ export function PortfolioPage({
             {statRow("Your Shares", "▓▓▓▓▓▓▓▓", false, true)}
             {statRow(
               "Total Pool Shares",
-              totalShares ? (Number(totalShares) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—",
+              totalShares ? (Number(totalShares) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "-",
             )}
             <div style={{ padding: "14px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "13px", color: "#6b6860" }}>Pool Ownership</span>

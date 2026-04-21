@@ -87,7 +87,7 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
       return;
     }
     if (poolInitialized === false) {
-      setSwapError("Pool not initialized — liquidity must be seeded first");
+      setSwapError("Pool not initialized - liquidity must be seeded first");
       return;
     }
     setIsSwapping(true);

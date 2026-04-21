@@ -23,21 +23,21 @@ export function usePoolInit() {
     address: CONTRACTS.pool,
     abi: PoolABI.abi,
     functionName: "reserveSnapshotA",
-    query: { staleTime: 15_000 },
+    query: { staleTime: 4_000 },
   });
 
   const { data: snapshotBRaw, refetch: refetchB } = useReadContract({
     address: CONTRACTS.pool,
     abi: PoolABI.abi,
     functionName: "reserveSnapshotB",
-    query: { staleTime: 15_000 },
+    query: { staleTime: 4_000 },
   });
 
   const { data: totalSharesRaw, refetch: refetchShares } = useReadContract({
     address: CONTRACTS.pool,
     abi: PoolABI.abi,
     functionName: "totalShares",
-    query: { staleTime: 15_000 },
+    query: { staleTime: 4_000 },
   });
 
   const snapshotA = snapshotARaw as bigint | undefined;

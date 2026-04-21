@@ -1033,7 +1033,7 @@ export function SwapPage() {
           {activeNav === "Audit View" && <AuditViewPage address={address} isMobile={isMobile} />}
           {activeNav === "Settings" && <SettingsPage isMobile={isMobile} />}
 
-          {/* ── DASHBOARD ─────────────────────────────── */}
+          {/* Dashboard */}
           {activeNav === "Dashboard" && (
             <>
               <div style={{ marginBottom: "22px" }}>
@@ -1045,7 +1045,7 @@ export function SwapPage() {
                 </p>
               </div>
 
-              {/* Pool not live notice — disappears once deployer runs initializePool.ts */}
+              {/* Pool not live notice - disappears once deployer runs initializePool.ts */}
               {poolInitialized === false && (
                 <div
                   style={{
@@ -1400,7 +1400,7 @@ export function SwapPage() {
             </>
           )}
 
-          {/* ── SWAP ──────────────────────────────────── */}
+          {/* Swap */}
           {activeNav === "Swap" && (
             <>
               {/* Pool not live notice */}
@@ -1518,8 +1518,8 @@ export function SwapPage() {
                   <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>Encrypted on-chain</div>
                 </div>
                 {[
-                  { label: "Your cUSDT", value: cUSDTBalance ?? "—", sub: "Decrypted balance", acc: true },
-                  { label: "Your cETH", value: cETHBalance ?? "—", sub: "Decrypted balance" },
+                  { label: "Your cUSDT", value: cUSDTBalance ?? "-", sub: "Decrypted balance", acc: true },
+                  { label: "Your cETH", value: cETHBalance ?? "-", sub: "Decrypted balance" },
                   {
                     label: "Active Traders",
                     value: activeTraders.toString(),
@@ -1881,8 +1881,8 @@ export function SwapPage() {
                   <div style={{ marginBottom: "14px" }}>
                     {[
                       { k: "Exchange Rate", v: exchangeRateLabel },
-                      { k: "Estimated Output", v: estimatedOut ? `${estimatedOut} ${receiveToken.name}` : "—" },
-                      { k: "Min. Received", v: minReceived ? `${minReceived} ${receiveToken.name}` : "—" },
+                      { k: "Estimated Output", v: estimatedOut ? `${estimatedOut} ${receiveToken.name}` : "-" },
+                      { k: "Min. Received", v: minReceived ? `${minReceived} ${receiveToken.name}` : "-" },
                       { k: "Network Fee", v: "~$0.42" },
                       { k: "MEV Protection", v: "Active", ok: true },
                     ].map((r, i) => (
@@ -2101,8 +2101,8 @@ export function SwapPage() {
                     >
                       <span style={{ fontWeight: 700 }}>FHE initialization failed.</span> Possible causes: (1) the Zama
                       relayer at <span style={{ fontFamily: "monospace" }}>relayer.testnet.zama.org</span> is
-                      temporarily unreachable — try clearing your browser DNS cache or switching networks; (2) multiple
-                      wallet extensions installed in the same browser profile can conflict — use a dedicated profile
+                      temporarily unreachable - try clearing your browser DNS cache or switching networks; (2) multiple
+                      wallet extensions installed in the same browser profile can conflict - use a dedicated profile
                       with one extension.
                       {fhevmError && (
                         <span style={{ display: "block", marginTop: "4px", color: "rgba(239,68,68,0.6)", fontFamily: "monospace", fontSize: "10px", wordBreak: "break-all" }}>
@@ -2141,7 +2141,7 @@ export function SwapPage() {
                     </div>
                   )}
 
-                  {/* Pre-connect / FHE setup notice — hidden once FHE is ready */}
+                  {/* Pre-connect / FHE setup notice - hidden once FHE is ready */}
                   {fhevmStatus !== "ready" && !isRealSwapping && !swapSuccess && (
                     <div
                       style={{
@@ -2178,7 +2178,7 @@ export function SwapPage() {
                     </div>
                   )}
 
-                  {/* TX Steps — shown while swapping or just completed */}
+                  {/* TX Steps - shown while swapping or just completed */}
                   {(isRealSwapping || (txHash && (isConfirmed || swapSuccess))) && (
                     <div
                       style={{

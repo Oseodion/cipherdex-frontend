@@ -31,7 +31,7 @@ export function LiquidityPoolsPage({
   const [activeTab, setActiveTab] = useState<"Add" | "Remove">("Add");
   const [amtA, setAmtA] = useState("1000"); // cUSDT
   const [amtB, setAmtB] = useState("0.5"); // cETH
-  /** Human-readable pool share units — same scale as "Total Pool Shares" stat (we ×1e6 for chain raw uint64). */
+  /** Human-readable pool share units - same scale as "Total Pool Shares" stat (we ×1e6 for chain raw uint64). */
   const [removeShares, setRemoveShares] = useState("10");
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -77,13 +77,13 @@ export function LiquidityPoolsPage({
 
   const snapshotADisplay = snapshotA
     ? (Number(snapshotA) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })
-    : "—";
+    : "-";
   const snapshotBDisplay = snapshotB
     ? (Number(snapshotB) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 4 })
-    : "—";
+    : "-";
   const totalSharesDisplay = totalShares
     ? (Number(totalShares) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })
-    : "—";
+    : "-";
 
   async function handleAdd() {
     let slowEncryptTimer: number | null = null;
@@ -100,7 +100,7 @@ export function LiquidityPoolsPage({
       window.requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     if (!isConnected || !canEncrypt || !ethersProvider || !address) {
-      setError("Wallet or FHE not ready — ensure wallet is connected and FHE instance is initialized.");
+      setError("Wallet or FHE not ready - ensure wallet is connected and FHE instance is initialized.");
       setIsLoading(false);
       return;
     }
@@ -114,7 +114,7 @@ export function LiquidityPoolsPage({
             }, 12000)
           : null;
 
-      // Encrypt before any transactions — same pattern as useSwap.ts.
+      // Encrypt before any transactions - same pattern as useSwap.ts.
       // Doing operator approvals first invalidates the ethersSigner's underlying
       // provider (wagmi updates walletClient after each tx), which causes the
       // relayer fetch inside encrypt() to fail with a COEP/SSL error.
@@ -171,13 +171,13 @@ export function LiquidityPoolsPage({
         }
         return next;
       });
-      setStatus("Liquidity added. Your encrypted LP share increased — reserve stats update on next swap.");
+      setStatus("Liquidity added. Your encrypted LP share increased - reserve stats update on next swap.");
       onSuccess?.();
       window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
       setTimeout(() => refetch(), 2500);
     } catch (err: any) {
       const msg = err?.message ?? "Failed";
-      setError(msg.includes("gas") ? "Transaction failed — FHE gas limit exceeded. Try again." : msg);
+      setError(msg.includes("gas") ? "Transaction failed - FHE gas limit exceeded. Try again." : msg);
       setStatus(null);
     } finally {
       if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
@@ -200,7 +200,7 @@ export function LiquidityPoolsPage({
       window.requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     if (!isConnected || !canEncrypt || !ethersProvider) {
-      setError("Wallet or FHE not ready — ensure wallet is connected and FHE instance is initialized.");
+      setError("Wallet or FHE not ready - ensure wallet is connected and FHE instance is initialized.");
       setIsLoading(false);
       return;
     }
@@ -232,13 +232,13 @@ export function LiquidityPoolsPage({
         args: [toHex(encShares.handles[0]), toHex(encShares.inputProof)],
       });
       await ethersProvider.waitForTransaction(tx as string);
-      setStatus("Liquidity removed. Tokens returned to your wallet — reserve stats update on next swap.");
+      setStatus("Liquidity removed. Tokens returned to your wallet - reserve stats update on next swap.");
       onSuccess?.();
       window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
       setTimeout(() => refetch(), 2500);
     } catch (err: any) {
       const msg = err?.message ?? "Failed";
-      setError(msg.includes("gas") ? "Transaction failed — FHE gas limit exceeded. Try again." : msg);
+      setError(msg.includes("gas") ? "Transaction failed - FHE gas limit exceeded. Try again." : msg);
       setStatus(null);
     } finally {
       if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
@@ -303,7 +303,7 @@ export function LiquidityPoolsPage({
         </p>
       </div>
 
-      {/* Pool not live banner — deployer runs initializePool.ts to remove this */}
+      {/* Pool not live banner - deployer runs initializePool.ts to remove this */}
       {poolInitialized === false && (
         <div
           style={{
@@ -334,7 +334,7 @@ export function LiquidityPoolsPage({
           <div style={{ fontSize: "13px", color: "#6b6860", lineHeight: 1.6 }}>
             Initial liquidity is being seeded by the deployer.
             <br />
-            Check back shortly — once the pool is live you can add and remove liquidity here.
+            Check back shortly - once the pool is live you can add and remove liquidity here.
           </div>
         </div>
       )}
@@ -348,9 +348,21 @@ export function LiquidityPoolsPage({
           marginBottom: "20px",
         }}
       >
-        {stat("Reserve cUSDT", snapshotADisplay, "Plaintext snapshot — refreshes on swap")}
-        {stat("Reserve cETH", snapshotBDisplay, "Plaintext snapshot — refreshes on swap")}
-        {stat("Total Pool Shares", totalSharesDisplay, "May lag depending on contract snapshot behavior")}
+        {stat(
+          "Reserve cUSDT",
+          snapshotADisplay,
+          "On-chain snapshot divisor - not full TVL; moves with swap-driven updates",
+        )}
+        {stat(
+          "Reserve cETH",
+          snapshotBDisplay,
+          "On-chain snapshot divisor - not full TVL; moves with swap-driven updates",
+        )}
+        {stat(
+          "Total Pool Shares",
+          totalSharesDisplay,
+          "Plaintext totalShares field - may not reflect all encrypted LP mints",
+        )}
         {stat(
           "Added Here (This Wallet + Browser)",
           `${localNetAdded.usdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${localNetAdded.eth.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
@@ -361,12 +373,25 @@ export function LiquidityPoolsPage({
         style={{
           fontSize: "11px",
           color: "#3a3832",
-          lineHeight: "1.5",
+          lineHeight: "1.55",
           marginBottom: "18px",
           letterSpacing: "0.01em",
+          padding: "12px 14px",
+          background: "rgba(255,255,245,0.03)",
+          border: "1px solid rgba(255,255,245,0.06)",
+          borderRadius: "10px",
         }}
       >
-        Reserve values reflect the last swap. Liquidity additions are fully encrypted and processed on-chain — amounts are never revealed in the contract state.
+        <span style={{ color: "#6b6860", fontWeight: 700, fontSize: "10px", letterSpacing: "0.06em" }}>
+          ABOUT THESE STATS
+        </span>
+        <p style={{ margin: "8px 0 0 0", color: "#6b6860" }}>
+          The big numbers are <strong style={{ color: "#8a8680" }}>public on-chain fields</strong> the pool uses for
+          math (snapshots + totalShares). They are <strong style={{ color: "#8a8680" }}>not</strong> a live decrypted
+          view of the full pool. Encrypted liquidity and per-wallet LP shares use a different representation - so
+          these cards are a <strong style={{ color: "#8a8680" }}>rough dashboard signal</strong>, not a precise balance
+          sheet. We refresh them often after swaps and liquidity actions.
+        </p>
       </div>
 
       {/* Your position */}
@@ -396,7 +421,7 @@ export function LiquidityPoolsPage({
           <div
             style={{ fontSize: "20px", fontFamily: "monospace", color: "rgba(240,237,230,0.2)", letterSpacing: "2px" }}
           >
-            {isConnected ? "▓▓▓▓▓▓▓▓" : "—"}
+            {isConnected ? "▓▓▓▓▓▓▓▓" : "-"}
           </div>
           <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>
             Encrypted - shares not publicly visible
@@ -529,7 +554,7 @@ export function LiquidityPoolsPage({
               />
               <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "6px", lineHeight: 1.5 }}>
                 Use the <strong>same number scale</strong> as <strong>Total Pool Shares</strong> above (e.g. if pool
-                shows 1,414.21, that is the same unit system). Your exact wallet balance is encrypted on-chain — we
+                shows 1,414.21, that is the same unit system). Your exact wallet balance is encrypted on-chain - we
                 cannot show it in plaintext here without decrypting. If you request more shares than you hold, the
                 removal effectively does nothing (no tokens returned).
               </div>

@@ -81,7 +81,7 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
             .sort((a, b) => b.timestamp - a.timestamp),
         );
       } catch {
-        // Silently fail — still show the page
+        // Silently fail - still show the page
       } finally {
         setLoading(false);
       }
@@ -101,8 +101,8 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
         direction: e.aToB ? "cUSDT→cETH" : "cETH→cUSDT",
         timestamp: e.timestamp,
         blockNumber: e.blockNumber.toString(),
-        encryptedAmountIn: "0x[FHE handle — not revealed]",
-        encryptedAmountOut: "0x[FHE handle — not revealed]",
+        encryptedAmountIn: "0x[FHE handle - not revealed]",
+        encryptedAmountOut: "0x[FHE handle - not revealed]",
       })),
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
@@ -436,7 +436,7 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
         })}
         {events.length > 10 && (
           <div style={{ fontSize: "11px", color: "#3a3832", fontFamily: "monospace", marginTop: "12px" }}>
-            +{events.length - 10} more — download the full audit report
+            +{events.length - 10} more - download the full audit report
           </div>
         )}
       </div>

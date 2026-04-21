@@ -197,7 +197,7 @@ export function SettingsPage({}: { isMobile?: boolean } = {}) {
               rel="noopener noreferrer"
               style={{ fontSize: "11px", fontFamily: "monospace", color: "#FFD208", textDecoration: "none" }}
             >
-              {row.addr ? `${row.addr.slice(0, 10)}…${row.addr.slice(-6)}` : "—"}
+              {row.addr ? `${row.addr.slice(0, 10)}…${row.addr.slice(-6)}` : "-"}
             </a>
           </div>
         ))}

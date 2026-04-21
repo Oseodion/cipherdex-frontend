@@ -7,7 +7,7 @@ import { getMetadata } from "~~/utils/helper/getMetadata";
 
 export const metadata = getMetadata({
   title: "CipherDEX",
-  description: "Confidential AMM DEX — private swaps powered by FHE",
+  description: "Confidential AMM DEX - private swaps powered by FHE",
 });
 
 const DappWrapper = ({ children }: { children: React.ReactNode }) => {

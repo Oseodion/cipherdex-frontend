@@ -202,7 +202,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
         )}
         {!loading && !error && filtered.length > 0 && (
           <>
-            {/* Column headers — hidden on mobile */}
+            {/* Column headers - hidden on mobile */}
             {!isMobile && (
               <div
                 style={{

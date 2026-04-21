@@ -70,15 +70,15 @@ export const FHECounterDemo = () => {
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 " +
     "disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed";
 
-  // Primary (accent) button — #FFD208 with dark text and warm hover #A38025
+  // Primary (accent) button - #FFD208 with dark text and warm hover #A38025
   const primaryButtonClass =
     buttonClass + " bg-[#FFD208] text-[#2D2D2D] hover:bg-[#A38025] focus-visible:ring-[#2D2D2D]  cursor-pointer";
 
-  // Secondary (neutral dark) button — #2D2D2D with light text and accent focus
+  // Secondary (neutral dark) button - #2D2D2D with light text and accent focus
   const secondaryButtonClass =
     buttonClass + " bg-black text-[#F4F4F4] hover:bg-[#1F1F1F] focus-visible:ring-[#FFD208] cursor-pointer";
 
-  // Success/confirmed state — deeper gold #A38025 with dark text
+  // Success/confirmed state - deeper gold #A38025 with dark text
   const successButtonClass =
     buttonClass + " bg-[#A38025] text-[#2D2D2D] hover:bg-[#8F6E1E] focus-visible:ring-[#2D2D2D]";
 
