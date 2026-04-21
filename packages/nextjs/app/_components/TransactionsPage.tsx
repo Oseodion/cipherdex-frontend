@@ -15,6 +15,7 @@ type SwapEvent = {
 };
 
 type Filter = "All" | "cUSDT→cETH" | "cETH→cUSDT";
+const LOOKBACK_BLOCKS = 250000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 const formatAge = (ts: number) => {
@@ -38,7 +39,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
     setError(null);
     try {
       const latest = await publicClient.getBlockNumber();
-      const fromBlock = latest > 10000n ? latest - 10000n : 0n;
+      const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
       const chunk = 10000n;
       let from = fromBlock;
       const rawLogs: any[] = [];

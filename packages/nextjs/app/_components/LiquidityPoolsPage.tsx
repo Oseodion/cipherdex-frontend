@@ -34,6 +34,7 @@ export function LiquidityPoolsPage({
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastAddedSummary, setLastAddedSummary] = useState<string | null>(null);
 
   const { encryptWith, canEncrypt } = useFHEEncryption({
     instance: fhevmInstance,
@@ -121,8 +122,10 @@ export function LiquidityPoolsPage({
         args: [toHex(encA.handles[0]), toHex(encA.inputProof), toHex(encB.handles[0]), toHex(encB.inputProof)],
       });
       await ethersProvider.waitForTransaction(tx as string);
+      setLastAddedSummary(`${parseFloat(amtA).toLocaleString()} cUSDT + ${parseFloat(amtB)} cETH`);
       setStatus("Liquidity added. Your encrypted LP share increased — reserve stats update on next swap.");
       onSuccess?.();
+      window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
       setTimeout(() => refetch(), 2500);
     } catch (err: any) {
       const msg = err?.message ?? "Failed";
@@ -159,6 +162,7 @@ export function LiquidityPoolsPage({
       await ethersProvider.waitForTransaction(tx as string);
       setStatus("Liquidity removed. Tokens returned to your wallet — reserve stats update on next swap.");
       onSuccess?.();
+      window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
       setTimeout(() => refetch(), 2500);
     } catch (err: any) {
       const msg = err?.message ?? "Failed";
@@ -273,7 +277,7 @@ export function LiquidityPoolsPage({
       >
         {stat("Reserve cUSDT", snapshotADisplay, "Plaintext snapshot — refreshes on swap")}
         {stat("Reserve cETH", snapshotBDisplay, "Plaintext snapshot — refreshes on swap")}
-        {stat("Total Shares", totalSharesDisplay, "Encrypted — set at pool init")}
+        {stat("Total Pool Shares", totalSharesDisplay, "May lag depending on contract snapshot behavior")}
       </div>
       <div
         style={{
@@ -319,6 +323,11 @@ export function LiquidityPoolsPage({
           <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>
             Encrypted - shares not publicly visible
           </div>
+          {lastAddedSummary && (
+            <div style={{ fontSize: "10px", color: "#FFD208", marginTop: "6px", fontFamily: "monospace" }}>
+              Last added (local): {lastAddedSummary}
+            </div>
+          )}
         </div>
         <div
           style={{

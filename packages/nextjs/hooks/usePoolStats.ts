@@ -7,7 +7,7 @@ import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const LOOKBACK_BLOCKS = 250000n;
+const LOOKBACK_BLOCKS = 120000n;
 const SCAN_CHUNK = 10000n;
 
 const formatAge = (timestampSeconds: number) => {

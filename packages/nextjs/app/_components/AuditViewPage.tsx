@@ -13,6 +13,7 @@ type SwapRecord = {
   txHash: string;
   blockNumber: bigint;
 };
+const LOOKBACK_BLOCKS = 250000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
@@ -20,11 +21,21 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
   const publicClient = usePublicClient();
   const [events, setEvents] = useState<SwapRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [proofCount] = useState(() => {
+  const [proofCount, setProofCount] = useState(() => {
     if (typeof window === "undefined") return 0;
     const stored = localStorage.getItem("cipherdex_fhe_proofs");
     return stored ? parseInt(stored, 10) : 0;
   });
+
+  useEffect(() => {
+    const refreshProofCount = () => {
+      const stored = localStorage.getItem("cipherdex_fhe_proofs");
+      setProofCount(stored ? parseInt(stored, 10) : 0);
+    };
+    refreshProofCount();
+    window.addEventListener("cipherdex:swap-confirmed", refreshProofCount);
+    return () => window.removeEventListener("cipherdex:swap-confirmed", refreshProofCount);
+  }, []);
 
   useEffect(() => {
     if (!publicClient) return;
@@ -32,7 +43,7 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
       setLoading(true);
       try {
         const latest = await publicClient.getBlockNumber();
-        const from = latest > 10000n ? latest - 10000n : 0n;
+        const from = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
         const chunk = 10000n;
         let cur = from;
         const rawLogs: any[] = [];
@@ -337,6 +348,9 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
           </div>
           <div style={{ fontSize: "11px", color: "#6b6860" }}>
             Each encrypted input is validated by Zama&apos;s proof system before the EVM executes
+          </div>
+          <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px", fontFamily: "monospace" }}>
+            Estimated on-chain proofs in loaded history: {events.length * 2}
           </div>
         </div>
       </div>

@@ -210,6 +210,11 @@ export function SwapPage() {
         // txHash is mirrored into toastTxHashRef by a dedicated effect.
         setToastVisible(true);
         setTimeout(() => setToastVisible(false), 5000);
+        // Hide revealed balances immediately after a successful swap so next reveal shows updated ciphertext handles.
+        setRevealing({});
+        setRevealed({});
+        setPendingReveal(null);
+        setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
         poolRefetch();
         window.dispatchEvent(
           new CustomEvent("cipherdex:swap-confirmed", {
@@ -237,7 +242,7 @@ export function SwapPage() {
       }
     }, 16);
     return () => clearInterval(iv);
-  }, [swapSuccess, isConfirmed, resetSwap, poolRefetch, poolInitRefetch]);
+  }, [swapSuccess, isConfirmed, resetSwap, poolRefetch, poolInitRefetch, txHash]);
 
   // Use live pool snapshots; fall back to a static reference rate when pool isn't initialized
   const RATE = rateUSDTperETH ?? 2341.5;
@@ -2693,12 +2698,12 @@ export function SwapPage() {
             <CheckIcon />
           </div>
           <div>
-            <div style={{ fontSize: "13px", fontWeight: 800 }}>Transaction Submitted</div>
+            <div style={{ fontSize: "13px", fontWeight: 800 }}>Swap Completed</div>
             <div
               onClick={() => toastTxHashRef.current && window.open(`https://sepolia.etherscan.io/tx/${toastTxHashRef.current}`, "_blank")}
               style={{ fontSize: "10px", color: "#FFD208", cursor: "pointer", marginTop: "2px" }}
             >
-              View on Etherscan →
+              {toastTxHashRef.current ? `${toastTxHashRef.current.slice(0, 10)}…  View on Etherscan →` : "View on Etherscan →"}
             </div>
           </div>
           <span

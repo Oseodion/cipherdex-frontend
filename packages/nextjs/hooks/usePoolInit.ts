@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useReadContract, useWriteContract } from "wagmi";
 import { CONTRACTS } from "./useCipherDEX";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
@@ -57,6 +57,12 @@ export function usePoolInit() {
     refetchB();
     refetchShares();
   }, [refetchInit, refetchA, refetchB, refetchShares]);
+
+  useEffect(() => {
+    const onLiquidityChanged = () => refetch();
+    window.addEventListener("cipherdex:liquidity-changed", onLiquidityChanged);
+    return () => window.removeEventListener("cipherdex:liquidity-changed", onLiquidityChanged);
+  }, [refetch]);
 
   // Admin-only: seed initial liquidity into the pool.
   // amountA = cUSDT raw (6 decimals), amountB = cETH raw (9 decimals)
