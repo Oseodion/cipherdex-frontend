@@ -161,6 +161,30 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
     }
   }, [txHash, isConfirmed, isReceiptError, receiptError]);
 
+  useEffect(() => {
+    if (!txHash || !ethersProvider || isConfirmed || swapSuccess) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const receipt = await ethersProvider.waitForTransaction(txHash, 1, 120000);
+        if (cancelled || !receipt) return;
+        setTxStep(5);
+        setSwapSuccess(true);
+        setSwapError(null);
+        setIsSwapping(false);
+      } catch (err: any) {
+        if (cancelled || isReceiptError) return;
+        setSwapError(err?.message || "Swap confirmation timed out");
+        setTxStep(0);
+        setTxHash(undefined);
+        setIsSwapping(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [txHash, ethersProvider, isConfirmed, isReceiptError, swapSuccess]);
+
   const reset = useCallback(() => {
     setTxStep(0);
     setSwapError(null);
