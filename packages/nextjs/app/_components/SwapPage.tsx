@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { AuditViewPage } from "./AuditViewPage";
 import { LiquidityPoolsPage } from "./LiquidityPoolsPage";
 import { PerformancePage } from "./PerformancePage";
@@ -413,9 +414,13 @@ export function SwapPage() {
 
   // --- Swap ---
   async function doSwap() {
-    setSwapClickAcknowledged(true);
-    setSwapPendingHint("Preparing encrypted swap…");
-    setIsSubmitting(true);
+    // flushSync forces the DOM to update immediately so the button/spinner paints
+    // before encryption blocks the main thread for several seconds.
+    flushSync(() => {
+      setSwapClickAcknowledged(true);
+      setSwapPendingHint("Preparing encrypted swap…");
+      setIsSubmitting(true);
+    });
     if (swapPendingTimeoutRef.current) {
       window.clearTimeout(swapPendingTimeoutRef.current);
       swapPendingTimeoutRef.current = null;
@@ -423,13 +428,12 @@ export function SwapPage() {
     swapPendingTimeoutRef.current = window.setTimeout(() => {
       setSwapPendingHint("Still encrypting… this can take a bit on some wallets.");
     }, 12000);
-    // Let React paint the button state before heavy FHE work starts.
     await new Promise<void>(resolve => {
       if (typeof window === "undefined") {
         resolve();
         return;
       }
-      window.requestAnimationFrame(() => resolve());
+      window.requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     try {
       if (fheUnsupportedReason) {

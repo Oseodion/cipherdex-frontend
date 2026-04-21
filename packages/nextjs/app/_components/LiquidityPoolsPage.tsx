@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { toHex, useFHEEncryption } from "@fhevm-sdk";
 import type { FhevmInstance } from "@fhevm-sdk";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
@@ -30,7 +31,8 @@ export function LiquidityPoolsPage({
   const [activeTab, setActiveTab] = useState<"Add" | "Remove">("Add");
   const [amtA, setAmtA] = useState("1000"); // cUSDT
   const [amtB, setAmtB] = useState("0.5"); // cETH
-  const [removeShares, setRemoveShares] = useState("100");
+  /** Human-readable pool share units — same scale as "Total Pool Shares" stat (we ×1e6 for chain raw uint64). */
+  const [removeShares, setRemoveShares] = useState("10");
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,15 +87,17 @@ export function LiquidityPoolsPage({
 
   async function handleAdd() {
     let slowEncryptTimer: number | null = null;
-    setIsLoading(true);
-    setError(null);
-    setStatus("Starting add liquidity…");
+    flushSync(() => {
+      setIsLoading(true);
+      setError(null);
+      setStatus("Starting add liquidity…");
+    });
     await new Promise<void>(resolve => {
       if (typeof window === "undefined") {
         resolve();
         return;
       }
-      window.requestAnimationFrame(() => resolve());
+      window.requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     if (!isConnected || !canEncrypt || !ethersProvider || !address) {
       setError("Wallet or FHE not ready — ensure wallet is connected and FHE instance is initialized.");
@@ -183,15 +187,17 @@ export function LiquidityPoolsPage({
 
   async function handleRemove() {
     let slowEncryptTimer: number | null = null;
-    setIsLoading(true);
-    setError(null);
-    setStatus("Starting remove liquidity…");
+    flushSync(() => {
+      setIsLoading(true);
+      setError(null);
+      setStatus("Starting remove liquidity…");
+    });
     await new Promise<void>(resolve => {
       if (typeof window === "undefined") {
         resolve();
         return;
       }
-      window.requestAnimationFrame(() => resolve());
+      window.requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     if (!isConnected || !canEncrypt || !ethersProvider) {
       setError("Wallet or FHE not ready — ensure wallet is connected and FHE instance is initialized.");
@@ -199,7 +205,13 @@ export function LiquidityPoolsPage({
       return;
     }
     try {
-      const sharesToRemove = BigInt(Math.floor(parseFloat(removeShares)));
+      const human = parseFloat(removeShares.replace(/,/g, ""));
+      if (!Number.isFinite(human) || human <= 0) {
+        throw new Error("Enter a positive share amount (same units as Total Pool Shares).");
+      }
+      // Match totalSharesDisplay: UI divides chain totalShares by 1e6; convert back to raw uint64 for the contract.
+      const sharesToRemove = BigInt(Math.round(human * 1_000_000));
+      if (sharesToRemove <= 0n) throw new Error("Share amount too small.");
       slowEncryptTimer =
         typeof window !== "undefined"
           ? window.setTimeout(() => {
@@ -507,16 +519,19 @@ export function LiquidityPoolsPage({
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div>
               <div style={{ fontSize: "11px", color: "#6b6860", marginBottom: "8px", fontWeight: 600 }}>
-                Shares to Remove
+                Pool shares to burn
               </div>
               <input
                 value={removeShares}
                 onChange={e => setRemoveShares(e.target.value)}
-                placeholder="100"
+                placeholder="10"
                 style={inputStyle}
               />
-              <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "6px" }}>
-                Enter the number of LP shares to redeem
+              <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "6px", lineHeight: 1.5 }}>
+                Use the <strong>same number scale</strong> as <strong>Total Pool Shares</strong> above (e.g. if pool
+                shows 1,414.21, that is the same unit system). Your exact wallet balance is encrypted on-chain — we
+                cannot show it in plaintext here without decrypting. If you request more shares than you hold, the
+                removal effectively does nothing (no tokens returned).
               </div>
             </div>
             <button
