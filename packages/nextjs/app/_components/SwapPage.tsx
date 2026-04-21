@@ -172,6 +172,7 @@ export function SwapPage() {
   const refetchRef = useRef(refetch);
   const toastTxHashRef = useRef<string | undefined>(undefined);
   const animationRanRef = useRef(false);
+  const finalizedTxRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     amountInRef.current = amountIn;
   }, [amountIn]);
@@ -186,6 +187,43 @@ export function SwapPage() {
       toastTxHashRef.current = txHash;
     }
   }, [txHash]);
+
+  // Hard fallback: always finalize post-swap UI exactly once per tx hash.
+  useEffect(() => {
+    const completed = swapSuccess || isConfirmed;
+    const hash = txHash ?? toastTxHashRef.current;
+    if (!completed || !hash) return;
+    if (finalizedTxRef.current === hash) return;
+    finalizedTxRef.current = hash;
+
+    toastTxHashRef.current = hash;
+    setToastVisible(true);
+    window.setTimeout(() => setToastVisible(false), 5000);
+
+    // Hide balances immediately so next reveal gets fresh encrypted handles.
+    setRevealing({});
+    setRevealed({});
+    setPendingReveal(null);
+    setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
+
+    poolRefetch();
+    window.dispatchEvent(new CustomEvent("cipherdex:swap-confirmed", { detail: { txHash: hash } }));
+    window.setTimeout(() => poolInitRefetch(), 1200);
+
+    if (typeof window !== "undefined") {
+      const prev = parseInt(localStorage.getItem("cipherdex_fhe_proofs") ?? "0", 10);
+      localStorage.setItem("cipherdex_fhe_proofs", String(prev + 2));
+    }
+
+    window.setTimeout(() => {
+      refetchRef.current().finally(() => {
+        setAmountIn("");
+        setAmountOut(null);
+        animationRanRef.current = false;
+        resetSwap();
+      });
+    }, 1800);
+  }, [swapSuccess, isConfirmed, txHash, poolRefetch, poolInitRefetch, resetSwap]);
 
   useEffect(() => {
     if (!(swapSuccess || isConfirmed)) {
@@ -360,6 +398,11 @@ export function SwapPage() {
         setIsSubmitting(false);
         return;
       }
+      // Immediately hide displayed balances when a swap attempt starts.
+      setRevealing({});
+      setRevealed({});
+      setPendingReveal(null);
+      setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
     if (isRealSwapping || !canSwap || !isConnected) { setIsSubmitting(false); return; }
     const amountValue = parseFloat(amountIn);
     if (!Number.isFinite(amountValue) || amountValue <= 0) { setIsSubmitting(false); return; }
@@ -2044,7 +2087,7 @@ export function SwapPage() {
                   )}
 
                   {/* TX Steps — shown while swapping or just completed */}
-                  {(isRealSwapping || isConfirmed || swapSuccess) && (
+                  {(isRealSwapping || (txHash && (isConfirmed || swapSuccess))) && (
                     <div
                       style={{
                         background: "rgba(0,0,0,0.22)",
