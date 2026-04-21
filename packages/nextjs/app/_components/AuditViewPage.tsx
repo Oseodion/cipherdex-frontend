@@ -13,7 +13,7 @@ type SwapRecord = {
   txHash: string;
   blockNumber: bigint;
 };
-const LOOKBACK_BLOCKS = 250000n;
+const LOOKBACK_BLOCKS = 120000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 

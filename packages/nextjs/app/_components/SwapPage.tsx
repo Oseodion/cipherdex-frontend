@@ -33,6 +33,7 @@ export function SwapPage() {
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
   const revealTimeoutRef = useRef<number | null>(null);
   const [fheUnsupportedReason, setFheUnsupportedReason] = useState<string | null>(null);
+  const [swapClickAcknowledged, setSwapClickAcknowledged] = useState(false);
 
   const { address, isConnected, chainId } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
@@ -392,6 +393,7 @@ export function SwapPage() {
 
   // --- Swap ---
   async function doSwap() {
+    setSwapClickAcknowledged(true);
     setIsSubmitting(true);
     try {
       if (fheUnsupportedReason) {
@@ -413,6 +415,7 @@ export function SwapPage() {
       await swap(amountInBig, minOut, isAToB);
     } finally {
       setIsSubmitting(false);
+      setSwapClickAcknowledged(false);
     }
     // amountOut count-up is driven by the swapSuccess effect above
   }
@@ -1102,7 +1105,7 @@ export function SwapPage() {
                 }}
               >
                 {/* Balances card */}
-                <div style={card}>
+                <div style={{ ...card, display: "flex", flexDirection: "column", minHeight: "286px" }}>
                   <div style={cardShine} />
                   <div
                     style={{
@@ -1166,6 +1169,7 @@ export function SwapPage() {
                   <button
                     onClick={() => setActiveNav("Swap")}
                     style={{
+                      marginTop: "auto",
                       width: "100%",
                       background: "#FFD208",
                       border: "none",
@@ -1176,7 +1180,6 @@ export function SwapPage() {
                       color: "#000",
                       cursor: "pointer",
                       fontFamily: "'Cabinet Grotesk',sans-serif",
-                      marginTop: "16px",
                     }}
                   >
                     Swap Now →
@@ -1976,13 +1979,13 @@ export function SwapPage() {
                       gap: "8px",
                     }}
                   >
-                    {(isSubmitting || isRealSwapping) && (
+                    {(swapClickAcknowledged || isSubmitting || isRealSwapping) && (
                       <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
                         <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
                       </svg>
                     )}
-                    {isSubmitting || isRealSwapping
-                      ? "Processing…"
+                    {swapClickAcknowledged || isSubmitting || isRealSwapping
+                      ? "Starting swap…"
                       : fheUnsupportedReason
                         ? "FHE Unsupported on Mobile"
                       : !isValidAmount
