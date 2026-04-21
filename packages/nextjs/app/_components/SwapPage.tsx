@@ -2055,13 +2055,15 @@ export function SwapPage() {
                       gap: "8px",
                     }}
                   >
-                    {(swapClickAcknowledged || isSubmitting || isRealSwapping) && (
+                    {isRealSwapping && (
                       <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
                         <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
                       </svg>
                     )}
                     {swapClickAcknowledged || isSubmitting || isRealSwapping
-                      ? "Starting swap…"
+                      ? isRealSwapping
+                        ? "Processing…"
+                        : "Starting swap…"
                       : fheUnsupportedReason
                         ? "FHE Unsupported on Mobile"
                       : !isValidAmount

@@ -292,11 +292,20 @@ export const createFhevmInstance = async (parameters: {
   const pub = await publicKeyStorageGet(aclAddress);
   throwIfAborted();
 
-  // Allow overriding the relayer base URL via env var in case Zama updates their endpoint.
-  // e.g. NEXT_PUBLIC_RELAYER_URL=https://relayer.testnet.zama.org
-  const relayerBase =
-    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RELAYER_URL) ||
-    relayerSDK.SepoliaConfig.relayerUrl;
+  // Relayer URL: COEP (require-corp) pages often cannot fetch Zama directly ("Failed to fetch").
+  // Default in the browser: same-origin /api/relayer proxy (see packages/nextjs/app/api/relayer).
+  // Override: NEXT_PUBLIC_RELAYER_URL=https://relayer.testnet.zama.org (direct, e.g. static IPFS build without API routes).
+  const envRelayer =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RELAYER_URL?.trim()
+      ? process.env.NEXT_PUBLIC_RELAYER_URL.trim()
+      : undefined;
+  const ipfsStatic =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_IPFS_BUILD === "true";
+  const sameOriginProxy =
+    typeof window !== "undefined" && !ipfsStatic
+      ? `${window.location.origin}/api/relayer`
+      : undefined;
+  const relayerBase = envRelayer ?? sameOriginProxy ?? relayerSDK.SepoliaConfig.relayerUrl;
 
   const config: FhevmInstanceConfig = {
     ...relayerSDK.SepoliaConfig,

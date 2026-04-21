@@ -265,6 +265,12 @@ export function LiquidityPoolsPage({
     fontFamily: "'Cabinet Grotesk',sans-serif",
     outline: "none",
   };
+  /** Spinner only after the brief "Starting …" pre-flight; encryption / txs use the spinner. */
+  const liquidityStartingPhase =
+    !!status &&
+    (status.startsWith("Starting add liquidity") || status.startsWith("Starting remove liquidity"));
+  const showLiquidityButtonSpinner = isLoading && !liquidityStartingPhase;
+
   const stat = (label: string, value: string, sub?: string) => (
     <div
       style={{
@@ -531,7 +537,7 @@ export function LiquidityPoolsPage({
                 gap: "8px",
               }}
             >
-              {isLoading && (
+              {showLiquidityButtonSpinner && (
                 <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
                   <circle cx="8" cy="8" r="6" fill="none" stroke="#000" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
                 </svg>
@@ -578,7 +584,7 @@ export function LiquidityPoolsPage({
                 gap: "8px",
               }}
             >
-              {isLoading && (
+              {showLiquidityButtonSpinner && (
                 <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
                   <circle cx="8" cy="8" r="6" fill="none" stroke="#000" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
                 </svg>
