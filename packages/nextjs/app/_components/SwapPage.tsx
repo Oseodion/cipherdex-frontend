@@ -1008,9 +1008,6 @@ export function SwapPage() {
                 <span style={{ color: "#f0ede6", fontWeight: 600 }}>Swap</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ fontSize: "12px", color: "#6b6860" }}>
-                  Status: <strong style={{ color: "#FFD208" }}>Active</strong> · System operating normally
-                </div>
                 <button
                   onClick={() => setActiveNav("Settings")}
                   style={{

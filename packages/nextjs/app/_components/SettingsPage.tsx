@@ -117,12 +117,12 @@ export function SettingsPage({}: { isMobile?: boolean } = {}) {
         </div>
       </div>
 
-      {/* Wallet provider guidance */}
+      {/* Wallet setup guidance */}
       <div style={card}>
-        <div style={sectionLabel}>Wallet Provider Reliability</div>
+        <div style={sectionLabel}>Wallet Setup Tip</div>
         <div style={{ fontSize: "12px", color: "#8a8680", lineHeight: 1.5 }}>
-          For the most reliable FHE initialization, use one wallet extension per browser profile. If you need
-          multiple wallets, use separate browser profiles so providers do not compete for <code>window.ethereum</code>.
+          For best results, use one wallet app or extension in this browser profile. If you use more than one wallet,
+          they can conflict and connection may fail.
         </div>
       </div>
 
