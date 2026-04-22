@@ -8,14 +8,12 @@ export function SettingsPage({}: { isMobile?: boolean } = {}) {
   const { address, isConnected } = useAccount();
   const [slippage, setSlippage] = useState("0.5");
   const [customSlippage, setCustomSlippage] = useState("");
-  const [sessionCleared, setSessionCleared] = useState(false);
 
   function clearSession() {
     if (typeof window === "undefined") return;
-    // Clear any cached FHE decryption keys from session storage
+    // Session storage may hold third-party keys; FHE decrypt signatures live in memory until reload.
     sessionStorage.clear();
-    setSessionCleared(true);
-    setTimeout(() => setSessionCleared(false), 3000);
+    window.location.reload();
   }
 
   const card: React.CSSProperties = {
@@ -227,11 +225,13 @@ export function SettingsPage({}: { isMobile?: boolean } = {}) {
               fontFamily: "'Cabinet Grotesk',sans-serif",
             }}
           >
-            {sessionCleared ? "Cleared" : "Clear Session"}
+            Clear session and reload
           </button>
         </div>
-        <div style={{ marginTop: "12px", fontSize: "11px", color: "#3a3832" }}>
-          Clears cached FHE decryption signatures from browser session storage.
+        <div style={{ marginTop: "12px", fontSize: "11px", color: "#3a3832", lineHeight: 1.45 }}>
+          {
+            "Clears this site's session storage, then reloads the page so in-memory FHE data (like decryption signatures) is reset. After reload, revealing balances may ask for wallet confirmation again."
+          }
         </div>
       </div>
 
