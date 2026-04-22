@@ -1691,25 +1691,6 @@ export function SwapPage() {
                     >
                       {s.sub}
                     </div>
-                    {(s.n === 1 || s.n === 2) && (
-                      <button
-                        onClick={() => revealBalance(s.n)}
-                        disabled={revealing[s.n]}
-                        style={{
-                          marginTop: "8px",
-                          background: "transparent",
-                          border: "1px solid rgba(255,255,245,0.08)",
-                          borderRadius: "6px",
-                          padding: "3px 8px",
-                          fontSize: "10px",
-                          color: "#6b6860",
-                          cursor: revealing[s.n] ? "not-allowed" : "pointer",
-                          fontFamily: "'Cabinet Grotesk',sans-serif",
-                        }}
-                      >
-                        {revealing[s.n] ? "..." : revealed[s.n] ? "Hide" : "Reveal"}
-                      </button>
-                    )}
                   </div>
                 ))}
               </div>
