@@ -8,7 +8,6 @@ import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_BLOCKS = 60000n;
-const QUICK_LOOKBACK_BLOCKS = 8000n;
 
 const formatAge = (timestampSeconds: number) => {
   const delta = Math.max(0, Math.floor(Date.now() / 1000) - timestampSeconds);
@@ -44,11 +43,8 @@ export function usePoolStats() {
   const loadPoolMetrics = useCallback(async (opts?: { foreground?: boolean }) => {
     if (!publicClient || !CONTRACTS.pool || !swapEvent) return;
     const foreground = opts?.foreground ?? false;
-    if (foreground) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+    if (foreground) setLoading(true);
+    else setRefreshing(true);
     setError(null);
 
     const applySwapLogs = (rawLogs: any[]) => {
@@ -102,36 +98,17 @@ export function usePoolStats() {
     try {
       const latestBlock = await publicClient.getBlockNumber();
       const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
-      const quickFrom = latestBlock > QUICK_LOOKBACK_BLOCKS ? latestBlock - QUICK_LOOKBACK_BLOCKS : 0n;
-
-      // First pass: recent window for fast UI.
-      const quickLogs = await fetchEventLogsChunked({
+      const logs = await fetchEventLogsChunked({
         publicClient,
         address: CONTRACTS.pool,
         abi: PoolABI.abi,
         eventName: "Swap",
-        fromBlock: quickFrom,
+        fromBlock,
         toBlock: latestBlock,
       });
-      applySwapLogs(quickLogs);
-      if (foreground) setLoading(false);
+      applySwapLogs(logs);
       setRefreshing(false);
-
-      // Background pass: full lookback for completeness.
-      if (quickFrom > fromBlock) {
-        void fetchEventLogsChunked({
-          publicClient,
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "Swap",
-          fromBlock,
-          toBlock: latestBlock,
-        })
-          .then(fullLogs => applySwapLogs(fullLogs))
-          .catch(() => {
-            // Keep fast-view data if backfill fails.
-          });
-      }
+      if (foreground) setLoading(false);
     } catch (err: any) {
       setError(err?.message ?? "Unable to load pool activity");
       setRefreshing(false);
@@ -141,8 +118,7 @@ export function usePoolStats() {
 
   useEffect(() => {
     loadPoolMetrics({ foreground: true });
-    const intervalId = window.setInterval(() => loadPoolMetrics(), 60000);
-    return () => window.clearInterval(intervalId);
+    return undefined;
   }, [loadPoolMetrics]);
 
   useEffect(() => {

@@ -10,7 +10,9 @@ export const CONTRACTS = {
 
 export function useCipherDEX() {
   const { address, status, chainId: connectedChainId } = useAccount();
-  const isConnected = status === "connected";
+  // Treat reconnecting sessions with a known address as connected so
+  // refresh does not temporarily disable reveal/faucet actions.
+  const isConnected = status !== "disconnected" && !!address;
   const { data: walletClient } = useWalletClient();
   const { ethersSigner, ethersProvider } = useWagmiEthers();
   const publicClient = usePublicClient();

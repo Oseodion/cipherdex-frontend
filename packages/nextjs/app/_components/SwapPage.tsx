@@ -18,6 +18,18 @@ import { usePoolInit } from "~~/hooks/usePoolInit";
 import { usePoolStats } from "~~/hooks/usePoolStats";
 import { useSwap } from "~~/hooks/useSwap";
 
+const normalizeDecryptError = (raw: string | null | undefined) => {
+  if (!raw) return "Decrypt failed. Please try again.";
+  const msg = raw.toLowerCase();
+  if (msg.includes("an error occured during decryption") || msg.includes("an error occurred during decryption")) {
+    return "Decrypt failed. Please retry in a few seconds.";
+  }
+  if (msg.includes("not authorized") || msg.includes("user decrypt handle")) {
+    return "Encrypted balance is still syncing. Please retry shortly.";
+  }
+  return raw;
+};
+
 export function SwapPage() {
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [revealed, setRevealed] = useState<{ [k: number]: boolean }>({});
@@ -65,8 +77,8 @@ export function SwapPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- Balances (must be declared before useFaucet so refetch is available) ---
-  const [pendingReveal, setPendingReveal] = useState<number | null>(null);
-  const [decryptRequest, setDecryptRequest] = useState<number | null>(null);
+  const [pendingReveal, setPendingReveal] = useState<1 | 2 | null>(null);
+  const [decryptRequest, setDecryptRequest] = useState<1 | 2 | null>(null);
   const {
     cUSDTBalance,
     cETHBalance,
@@ -74,8 +86,10 @@ export function SwapPage() {
     canDecrypt,
     decrypt,
     decryptError,
+    hasUSDTHandle,
+    hasETHHandle,
     refetch,
-  } = useBalances(address, isConnected, chainId, fhevmInstance, ethersSigner as any);
+  } = useBalances(address, isConnected, chainId, fhevmInstance, ethersSigner as any, decryptRequest);
 
   // --- Faucet: refetch balances on confirmed claim ---
   const handleFaucetSuccess = useCallback(() => {
@@ -152,6 +166,7 @@ export function SwapPage() {
 
   useEffect(() => {
     if (decryptRequest === null) return;
+    if (decryptKickoffRef.current !== decryptRequest) return;
     if (isDecrypting) return;
 
     const bal = decryptRequest === 1 ? cUSDTBalance : cETHBalance;
@@ -164,16 +179,20 @@ export function SwapPage() {
   useEffect(() => {
     if (decryptRequest === null) return;
     if (isDecrypting || !canDecrypt) return;
+    const handleReadyForRequest = decryptRequest === 1 ? hasUSDTHandle : hasETHHandle;
+    if (!handleReadyForRequest) return;
     if (decryptKickoffRef.current === decryptRequest) return;
     decryptKickoffRef.current = decryptRequest;
     decrypt();
-  }, [decryptRequest, canDecrypt, isDecrypting, decrypt]);
+  }, [decryptRequest, canDecrypt, isDecrypting, hasUSDTHandle, hasETHHandle, decrypt]);
 
   useEffect(() => {
     if (decryptRequest === null || !decryptError) return;
+    if (decryptKickoffRef.current !== decryptRequest) return;
     const n = decryptRequest;
-    setDecryptUiError(decryptError);
+    setDecryptUiError(normalizeDecryptError(decryptError));
     setDecryptRequest(null);
+    decryptKickoffRef.current = null;
     setRevealing(prev => ({ ...prev, [n]: false }));
     if (revealTimeoutRef.current) {
       window.clearTimeout(revealTimeoutRef.current);
@@ -190,6 +209,7 @@ export function SwapPage() {
       const n = decryptRequest;
       setDecryptUiError("Decrypt did not return a balance in time. Please retry.");
       setDecryptRequest(null);
+      decryptKickoffRef.current = null;
       setRevealing(prev => ({ ...prev, [n]: false }));
     }, 25000);
 
@@ -391,7 +411,7 @@ export function SwapPage() {
   }, [isConnected]);
 
   // --- Balance reveal ---
-  async function revealBalance(n: number) {
+  async function revealBalance(n: 1 | 2) {
     if (!isConnected || !address) return;
     if (revealing[n] || runningReveal.current[n]) return;
     setDecryptUiError(null);
@@ -407,7 +427,15 @@ export function SwapPage() {
       return;
     }
 
-    await refetch();
+    let handleReady = n === 1 ? hasUSDTHandle : hasETHHandle;
+    if (!handleReady) {
+      const readiness = await refetch();
+      handleReady = n === 1 ? readiness.usdtReady : readiness.ethReady;
+    }
+    if (!handleReady) {
+      setDecryptUiError("Encrypted balance is still syncing after swap. Please try again in a few seconds.");
+      return;
+    }
     setRevealing(prev => ({ ...prev, [n]: true }));
     setDisplayBals(prev => ({ ...prev, [n]: "▓▓▓▓▓▓▓▓" }));
     setDecryptRequest(n);
@@ -1597,19 +1625,22 @@ export function SwapPage() {
                 </div>
                 {[
                   {
+                    n: 1 as const,
                     label: "Your cUSDT",
-                    value: cUSDTBalance ?? "▓▓▓▓▓▓▓▓",
-                    sub: cUSDTBalance != null ? "Decrypted balance" : "Encrypted on-chain",
+                    value: displayBals[1],
+                    sub: revealed[1] ? "Decrypted balance" : "Encrypted on-chain",
                     acc: true,
-                    placeholder: cUSDTBalance == null,
+                    placeholder: !revealed[1],
                   },
                   {
+                    n: 2 as const,
                     label: "Your cETH",
-                    value: cETHBalance ?? "▓▓▓▓▓▓▓▓",
-                    sub: cETHBalance != null ? "Decrypted balance" : "Encrypted on-chain",
-                    placeholder: cETHBalance == null,
+                    value: displayBals[2],
+                    sub: revealed[2] ? "Decrypted balance" : "Encrypted on-chain",
+                    placeholder: !revealed[2],
                   },
                   {
+                    n: 0 as const,
                     label: "Active Traders",
                     value: activeTraders.toString(),
                     sub: "On Sepolia",
@@ -1660,6 +1691,25 @@ export function SwapPage() {
                     >
                       {s.sub}
                     </div>
+                    {(s.n === 1 || s.n === 2) && (
+                      <button
+                        onClick={() => revealBalance(s.n)}
+                        disabled={revealing[s.n]}
+                        style={{
+                          marginTop: "8px",
+                          background: "transparent",
+                          border: "1px solid rgba(255,255,245,0.08)",
+                          borderRadius: "6px",
+                          padding: "3px 8px",
+                          fontSize: "10px",
+                          color: "#6b6860",
+                          cursor: revealing[s.n] ? "not-allowed" : "pointer",
+                          fontFamily: "'Cabinet Grotesk',sans-serif",
+                        }}
+                      >
+                        {revealing[s.n] ? "..." : revealed[s.n] ? "Hide" : "Reveal"}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2579,7 +2629,7 @@ export function SwapPage() {
                             {displayBals[token.n]}
                           </div>
                           <button
-                            onClick={() => revealBalance(token.n)}
+                            onClick={() => revealBalance(token.n as 1 | 2)}
                             disabled={revealing[token.n]}
                             style={{
                               fontSize: "9px",

@@ -8,12 +8,17 @@ import { CONTRACTS } from "./useCipherDEX";
 import type { FhevmInstance } from "@fhevm-sdk";
 import type { ethers } from "ethers";
 
+const ZERO_HANDLE = `0x${"0".repeat(64)}`;
+
+const isValidHandle = (handle: string | undefined): handle is `0x${string}` => !!handle && handle !== ZERO_HANDLE;
+
 export function useBalances(
   address: `0x${string}` | undefined,
   isConnected: boolean,
   chainId: number | undefined,
   fhevmInstance: FhevmInstance | undefined,
   ethersSigner: ethers.JsonRpcSigner | undefined,
+  decryptTarget?: 1 | 2 | null,
 ) {
   const { storage: fhevmDecryptionSignatureStorage } = useInMemoryStorage();
 
@@ -28,7 +33,8 @@ export function useBalances(
       gcTime: 0,
     },
   });
-  const cUSDTHandle = cUSDTRawHandle as `0x${string}` | undefined;
+  const cUSDTHandleRaw = cUSDTRawHandle as `0x${string}` | undefined;
+  const cUSDTHandle = isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined;
 
   const { data: cETHRawHandle, refetch: refetchETH } = useReadContract({
     address: CONTRACTS.cETH,
@@ -41,21 +47,26 @@ export function useBalances(
       gcTime: 0,
     },
   });
-  const cETHHandle = cETHRawHandle as `0x${string}` | undefined;
+  const cETHHandleRaw = cETHRawHandle as `0x${string}` | undefined;
+  const cETHHandle = isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined;
 
   const requests = useMemo(() => {
     if (!cUSDTHandle && !cETHHandle) return undefined;
     const reqs = [];
-    if (cUSDTHandle) reqs.push({
-      handle: cUSDTHandle as string,
-      contractAddress: CONTRACTS.cUSDT,
-    });
-    if (cETHHandle) reqs.push({
-      handle: cETHHandle as string,
-      contractAddress: CONTRACTS.cETH,
-    });
+    if ((decryptTarget === undefined || decryptTarget === null || decryptTarget === 1) && cUSDTHandle) {
+      reqs.push({
+        handle: cUSDTHandle as string,
+        contractAddress: CONTRACTS.cUSDT,
+      });
+    }
+    if ((decryptTarget === undefined || decryptTarget === null || decryptTarget === 2) && cETHHandle) {
+      reqs.push({
+        handle: cETHHandle as string,
+        contractAddress: CONTRACTS.cETH,
+      });
+    }
     return reqs.length > 0 ? reqs : undefined;
-  }, [cUSDTHandle, cETHHandle]);
+  }, [cUSDTHandle, cETHHandle, decryptTarget]);
 
   const {
     decrypt,
@@ -87,7 +98,13 @@ export function useBalances(
   const cETHBalance = formatBalance(cETHRaw, 9);
 
   const refetch = useCallback(async () => {
-    await Promise.all([refetchUSDT(), refetchETH()]);
+    const [usdt, eth] = await Promise.all([refetchUSDT(), refetchETH()]);
+    const usdtHandle = usdt.data as `0x${string}` | undefined;
+    const ethHandle = eth.data as `0x${string}` | undefined;
+    return {
+      usdtReady: isValidHandle(usdtHandle),
+      ethReady: isValidHandle(ethHandle),
+    };
   }, [refetchUSDT, refetchETH]);
 
   return {
@@ -96,10 +113,12 @@ export function useBalances(
     cUSDTRaw,
     cETHRaw,
     isDecrypting,
-    canDecrypt,
+    canDecrypt: canDecrypt && !!requests,
     decrypt,
     decryptError,
     refetch,
+    hasUSDTHandle: !!cUSDTHandle,
+    hasETHHandle: !!cETHHandle,
     hasBalances: isConnected && !!address,
   };
 }

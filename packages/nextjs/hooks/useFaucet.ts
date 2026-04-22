@@ -8,7 +8,7 @@ import FaucetABI from "~~/contracts/CipherDEXFaucet.json";
 
 export function useFaucet(onSuccess?: () => void) {
   const { address, status } = useAccount();
-  const isConnected = status === "connected";
+  const isConnected = status !== "disconnected" && !!address;
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState(false);
@@ -26,7 +26,7 @@ export function useFaucet(onSuccess?: () => void) {
     abi: FaucetABI.abi,
     functionName: "cooldownRemaining",
     args: [address],
-    query: { enabled: isConnected && !!address },
+    query: { enabled: isConnected },
   });
 
   // Sync contract cooldown to local state
@@ -96,7 +96,7 @@ export function useFaucet(onSuccess?: () => void) {
     return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const canClaim = isConnected && !!address && !isClaiming && localCooldown === 0;
+  const canClaim = isConnected && !isClaiming && localCooldown === 0;
 
   return {
     claim,
