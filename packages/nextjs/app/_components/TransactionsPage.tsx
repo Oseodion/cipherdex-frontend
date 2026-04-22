@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getContractEvents } from "viem/actions";
 import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { CONTRACTS } from "~~/hooks/useCipherDEX";
+import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 type PoolActivityEvent = {
   kind: "swap" | "add" | "remove";
@@ -18,7 +18,7 @@ type PoolActivityEvent = {
 };
 
 type Filter = "All" | "cUSDT→cETH" | "cETH→cUSDT" | "Add liquidity" | "Remove liquidity";
-const LOOKBACK_BLOCKS = 120000n;
+const LOOKBACK_BLOCKS = 60000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 const formatAge = (ts: number) => {
@@ -43,44 +43,37 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
     try {
       const latest = await publicClient.getBlockNumber();
       const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
-      const chunk = 10000n;
-      let from = fromBlock;
       type Tagged = { log: any; kind: PoolActivityEvent["kind"] };
       const rawTagged: Tagged[] = [];
-
-      while (from <= latest) {
-        const to = from + chunk - 1n <= latest ? from + chunk - 1n : latest;
-        const [swapLogs, addLogs, removeLogs] = await Promise.all([
-          getContractEvents(publicClient, {
-            address: CONTRACTS.pool,
-            abi: PoolABI.abi,
-            eventName: "Swap",
-            fromBlock: from,
-            toBlock: to,
-            strict: false,
-          }),
-          getContractEvents(publicClient, {
-            address: CONTRACTS.pool,
-            abi: PoolABI.abi,
-            eventName: "LiquidityAdded",
-            fromBlock: from,
-            toBlock: to,
-            strict: false,
-          }),
-          getContractEvents(publicClient, {
-            address: CONTRACTS.pool,
-            abi: PoolABI.abi,
-            eventName: "LiquidityRemoved",
-            fromBlock: from,
-            toBlock: to,
-            strict: false,
-          }),
-        ]);
-        for (const log of swapLogs as any[]) rawTagged.push({ log, kind: "swap" });
-        for (const log of addLogs as any[]) rawTagged.push({ log, kind: "add" });
-        for (const log of removeLogs as any[]) rawTagged.push({ log, kind: "remove" });
-        from = to + 1n;
-      }
+      const [swapLogs, addLogs, removeLogs] = await Promise.all([
+        fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock,
+          toBlock: latest,
+        }),
+        fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "LiquidityAdded",
+          fromBlock,
+          toBlock: latest,
+        }),
+        fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "LiquidityRemoved",
+          fromBlock,
+          toBlock: latest,
+        }),
+      ]);
+      for (const log of swapLogs as any[]) rawTagged.push({ log, kind: "swap" });
+      for (const log of addLogs as any[]) rawTagged.push({ log, kind: "add" });
+      for (const log of removeLogs as any[]) rawTagged.push({ log, kind: "remove" });
 
       // Deduplicate by txHash + logIndex
       const seen = new Set<string>();

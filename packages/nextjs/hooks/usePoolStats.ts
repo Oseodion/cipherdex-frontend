@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CONTRACTS } from "./useCipherDEX";
-import { getContractEvents } from "viem/actions";
 import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
+import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const LOOKBACK_BLOCKS = 120000n;
-const SCAN_CHUNK = 10000n;
+const LOOKBACK_BLOCKS = 60000n;
 
 const formatAge = (timestampSeconds: number) => {
   const delta = Math.max(0, Math.floor(Date.now() / 1000) - timestampSeconds);
@@ -54,22 +53,14 @@ export function usePoolStats() {
     try {
       const latestBlock = await publicClient.getBlockNumber();
       const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
-      let scanFrom = fromBlock;
-      const rawLogs: any[] = [];
-
-      while (scanFrom <= latestBlock) {
-        const scanTo = scanFrom + SCAN_CHUNK - 1n <= latestBlock ? scanFrom + SCAN_CHUNK - 1n : latestBlock;
-        const chunkLogs = await getContractEvents(publicClient, {
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "Swap",
-          fromBlock: scanFrom,
-          toBlock: scanTo,
-          strict: false,
-        });
-        rawLogs.push(...(chunkLogs as any[]));
-        scanFrom = scanTo + 1n;
-      }
+      const rawLogs = await fetchEventLogsChunked({
+        publicClient,
+        address: CONTRACTS.pool,
+        abi: PoolABI.abi,
+        eventName: "Swap",
+        fromBlock,
+        toBlock: latestBlock,
+      });
 
       const uniqueLogs = rawLogs.filter(
         (log, index, self) =>

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getContractEvents } from "viem/actions";
 import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { CONTRACTS } from "~~/hooks/useCipherDEX";
+import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 type SwapRecord = {
   trader: string;
@@ -13,7 +13,7 @@ type SwapRecord = {
   txHash: string;
   blockNumber: bigint;
 };
-const LOOKBACK_BLOCKS = 120000n;
+const LOOKBACK_BLOCKS = 60000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
@@ -44,22 +44,14 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
       try {
         const latest = await publicClient.getBlockNumber();
         const from = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
-        const chunk = 10000n;
-        let cur = from;
-        const rawLogs: any[] = [];
-        while (cur <= latest) {
-          const to = cur + chunk - 1n <= latest ? cur + chunk - 1n : latest;
-          const logs = await getContractEvents(publicClient, {
-            address: CONTRACTS.pool,
-            abi: PoolABI.abi,
-            eventName: "Swap",
-            fromBlock: cur,
-            toBlock: to,
-            strict: false,
-          });
-          rawLogs.push(...(logs as any[]));
-          cur = to + 1n;
-        }
+        const rawLogs = await fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock: from,
+          toBlock: latest,
+        });
         // Deduplicate by txHash + logIndex
         const seen = new Set<string>();
         const deduped = rawLogs.filter(log => {
