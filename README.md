@@ -1,20 +1,41 @@
-# CipherDEX — Confidential AMM on Zama FHEVM
+# CipherDEX
 
-A decentralized exchange where swap amounts are encrypted with Fully Homomorphic Encryption before the transaction leaves the browser. MEV bots watching the mempool see only encrypted ciphertext — the actual trade size is never revealed on-chain.
+**Confidential AMM on [Zama FHEVM](https://www.zama.ai/)** - swap amounts are encrypted in the browser before anything hits the chain. Mempool observers see ciphertext, not trade size
 
-Built for the **Zama Developer Program Mainnet Season 2 — Builder Track**.
+Built for the **Zama Developer Program Mainnet Season 2 - Builder Track**
+
+### Quick links
+
+| | |
+|:---|:---|
+| **Live app** | [https://cipherdex.vercel.app](https://cipherdex.vercel.app/) |
+| **Frontend (this repo)** | [Oseodion/cipherdex-frontend](https://github.com/Oseodion/cipherdex-frontend) |
+| **Smart contracts** | [Oseodion/cipherdex-contracts](https://github.com/Oseodion/cipherdex-contracts) |
+
+This repository is the **Next.js frontend**. Solidity (**CipherDEXPool**, **ConfidentialToken**, **faucet**) lives in [cipherdex-contracts](https://github.com/Oseodion/cipherdex-contracts) and uses `@fhevm/solidity`. Together: FHE on-chain (encrypted reserves, swaps, liquidity) and in the browser (encrypt inputs, decrypt balances via ACL).
 
 ---
 
-## The Problem
+## Contents
 
-On standard DEXes like Uniswap, every swap sits in the public mempool for roughly 12 seconds before it confirms. MEV bots read the swap amount in real time, calculate the price impact, and insert their own trades first. The user gets a worse execution price. This is front-running, and it costs DeFi users hundreds of millions of dollars per year.
+1. [Problem and approach](#problem-and-approach)
+2. [Architecture](#architecture)
+3. [Features](#features)
+4. [Deployed contracts (Sepolia)](#deployed-contracts-sepolia)
+5. [Tech stack](#tech-stack)
+6. [Run locally](#run-locally)
+7. [Environment variables](#environment-variables)
+8. [Known limitations](#known-limitations)
 
-## How CipherDEX Fixes It
+---
 
-CipherDEX encrypts the swap amount client-side using Zama's FHE SDK before the transaction is submitted. The pool contract executes AMM math on ciphertext — it never sees the raw input amount. Even the sequencer and validators cannot read what was swapped.
+## Problem and approach
 
-**Encrypt → Submit → Settle. In that order. The amount is never plaintext on-chain.**
+**Problem.** On typical DEXs, swaps sit in the public mempool before confirmation. Searchers read amounts and can front-run; users get worse prices.
+
+**Approach.** CipherDEX encrypts the swap amount client-side with Zama’s FHE stack, then submits ciphertext and proofs. The pool runs constant-product math on encrypted values. The cleartext size is not exposed in calldata or public logs in the same way as a normal swap.
+
+**Flow:** Encrypt → submit → settle. The amount is not plaintext on-chain in the usual sense.
 
 ---
 
@@ -23,70 +44,80 @@ CipherDEX encrypts the swap amount client-side using Zama's FHE SDK before the t
 ```
 User enters amount
        ↓
-FHE SDK encrypts amount in browser (Zama relayer issues input proof)
+FHE SDK encrypts in browser (Zama relayer issues input proof)
        ↓
-Encrypted handle + proof submitted to CipherDEXPool.swap()
+Encrypted handle + proof → CipherDEXPool.swap()
        ↓
-Pool performs constant-product AMM math on encrypted values (FHE operations)
+Pool: AMM math on ciphertext (FHE ops)
        ↓
-Output token amount revealed only to recipient via ACL-gated decryption
+Output amount available to recipient via ACL-gated decryption
        ↓
-Balance updated — plaintext amount never appears in calldata or logs
+Balances updated — no public plaintext amount in logs
 ```
 
-The pool uses confidential ERC20 tokens (cUSDT and cETH). All token balances and LP shares are stored as FHE ciphertexts. Encrypted handles are 32-byte opaque pointers — a mempool observer learns nothing about trade size or direction.
+The pool uses confidential ERC-20s (**cUSDT**, **cETH**). Balances and LP shares are FHE ciphertexts (opaque handles). Observers do not learn trade size or direction from those handles alone.
 
 ---
 
 ## Features
 
-- **Confidential swaps** — FHE-encrypted amounts, MEV-resistant by construction
-- **Add / remove liquidity** — encrypted inputs, fully on-chain
-- **Faucet** — claim 10,000 cUSDT and 5 cETH every 24 hours
-- **Portfolio page** — reveal your encrypted balances with an in-browser FHE decryption
-- **Transaction history** — on-chain Swap events with encrypted amounts shown as `░░░░`
-- **Performance dashboard** — 28-day activity heatmap from live event data
-- **Audit view** — explains the FHE privacy model and shows the encrypted trade log
+| Area | What you get |
+|:---|:---|
+| **Swaps** | Encrypted amounts; MEV-resistant by design vs plaintext mempool amounts |
+| **Liquidity** | Add / remove with encrypted inputs, on-chain |
+| **Faucet** | Claim test **cUSDT** / **cETH** on Sepolia (cooldown) |
+| **Portfolio** | Reveal encrypted balances via in-browser FHE decrypt |
+| **Transactions** | **Swap**, **LiquidityAdded**, **LiquidityRemoved** events; amounts shown as encrypted / obscured |
+| **Performance** | 28-day activity heatmap from on-chain events |
+| **Audit view** | Privacy model + encrypted activity framing |
 
 ---
 
-## Deployed Contracts — Sepolia
+## Deployed contracts (Sepolia)
 
 | Contract | Address |
-|---|---|
+|:---|:---|
 | cUSDT | `0x401924f4bd976A0168eCa95253eAE61590e89115` |
 | cETH | `0x51aA0DA9A1100deb3f2B2B75dD4cc1b67A5590F4` |
 | CipherDEXPool | `0x34ADB4dfc310dAF08982E10BA8162794A7521734` |
 | CipherDEXFaucet | `0x53063D910e9Ebe4B112ceFCEB1a08A62A7cD2A9f` |
 
+[Etherscan (Sepolia)](https://sepolia.etherscan.io/) — paste an address to verify and interact.
+
 ---
 
-## Tech Stack
+## Tech stack
 
-| Layer | Tools |
-|---|---|
-| Smart contracts | Solidity, Hardhat, Zama FHEVM / fhevmjs |
-| Frontend | Next.js 15, TypeScript, wagmi v2, viem, RainbowKit, ethers.js |
+| Layer | Stack |
+|:---|:---|
+| Contracts | Solidity, Hardhat, Zama FHEVM / fhevmjs |
+| App | Next.js 15, TypeScript, wagmi v2, viem, RainbowKit, ethers.js |
 | FHE | Zama relayer SDK, fhevmjs |
-| Styling | Tailwind CSS, Cabinet Grotesk |
+| UI | Tailwind CSS, Cabinet Grotesk |
 
 ---
 
-## Running Locally
+## Run locally
 
 ```bash
-git clone <repo>
-cd packages/nextjs
-cp .env.example .env.local   # fill in values
+git clone https://github.com/Oseodion/cipherdex-frontend.git
+cd cipherdex-frontend
 pnpm install
-pnpm dev
+cp packages/nextjs/.env.example packages/nextjs/.env.local   # then edit
+pnpm start
 ```
 
-Open `http://localhost:3000`. Connect MetaMask on Sepolia, claim from the faucet, swap.
+Open [http://localhost:3000](http://localhost:3000), connect a wallet on **Sepolia**, use the faucet, then swap.
 
-### Required environment variables
+**Contracts:** clone [cipherdex-contracts](https://github.com/Oseodion/cipherdex-contracts) separately (Hardhat; deploy scripts align with the addresses above).
 
-```
+---
+
+## Environment variables
+
+**Required** (in `packages/nextjs/.env.local`):
+
+```env
 NEXT_PUBLIC_ALCHEMY_API_KEY=
 NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=
 NEXT_PUBLIC_CUSDT_ADDRESS=0x401924f4bd976A0168eCa95253eAE61590e89115
@@ -95,24 +126,43 @@ NEXT_PUBLIC_POOL_ADDRESS=0x34ADB4dfc310dAF08982E10BA8162794A7521734
 NEXT_PUBLIC_FAUCET_ADDRESS=0x53063D910e9Ebe4B112ceFCEB1a08A62A7cD2A9f
 ```
 
+**Optional**
+
+| Variable | Purpose |
+|:---|:---|
+| `NEXT_PUBLIC_RELAYER_URL` | Override default Zama testnet relayer URL |
+| `NEXT_PUBLIC_USE_RELAYER_PROXY=true` | Send relayer traffic via this app’s `/api/relayer` when the browser cannot call Zama directly (e.g. strict COEP). Omit for direct relayer (common for decrypt) |
+
 ---
 
-## Known Limitations
+## Known limitations
 
-**Reserve stats don't update after addLiquidity.**
-`reserveSnapshotA` and `reserveSnapshotB` are plaintext `uint64` values written only during `swap()`. The confidential token standard provides no plaintext `balanceOf` — all balance reads return encrypted `bytes32` handles. Reserve figures on the Liquidity Pools page reflect the state as of the last swap, not the last liquidity addition. This is a consequence of Zama FHEVM's confidential token design, not a frontend bug.
+### Reserve snapshots vs encrypted liquidity
 
-**LP share balances are encrypted.**
-Each user's share is stored as an FHE ciphertext. The pool exposes `getShares(address) → bytes32` (an encrypted handle). Remove liquidity works on-chain, but the UI cannot display individual share amounts without the pool contract exposing a decryption path for the caller.
+`reserveSnapshotA` / `reserveSnapshotB` are plaintext **uint64** divisors for AMM math. They are updated in `initializePool`, owner-only `addLiquidityPlaintext`, and inside `swap()`. Encrypted **`addLiquidity`** / **`removeLiquidity`** update ciphertext reserves and shares but **do not** update these snapshots, so UI “reserve” figures can lag until a later `swap()` (or owner plaintext add). Not a frontend bug — contract tradeoff. Confidential tokens also lack a plaintext pool TVL `balanceOf`; the UI uses snapshots as a rough signal.
 
-**FHE requires specific browser headers.**
-The app sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` and `Cross-Origin-Embedder-Policy: require-corp`. These are required for the SharedArrayBuffer support that FHE depends on. If FHE fails to initialize, the swap button will show an error message.
+### LP shares
 
-**Multiple wallet extensions can cause FHE init failure.**
-Browser extensions that inject wallet providers fight over `window.ethereum` before the page loads. This can break the COOP/COEP environment the FHE SDK requires. Recommended: use a dedicated browser profile with one wallet extension. MetaMask on a clean profile works reliably.
+Per-user shares are FHE ciphertexts. `getShares(address)` returns an **euint64** handle (`bytes32`). Remove-liquidity works on-chain; showing a numeric share in the UI would need a decryption path for that handle.
 
-**WalletConnect WebSocket errors on localhost.**
-These appear in the console but are cosmetic — WalletConnect's relay attempts a live connection even in dev. Functionality is unaffected.
+### Browser: COOP / COEP / SharedArrayBuffer
 
-**Network: Zama relayer dependency.**
-FHE balance decryption and swap encryption require a live connection to the Zama relayer at `relayer.testnet.zama.org`. If you see `ERR_NAME_NOT_RESOLVED` in the console, clear your browser DNS cache at `chrome://net-internals/#dns` and reload. The relayer URL can be overridden via the `NEXT_PUBLIC_RELAYER_URL` environment variable.
+The app sets **Cross-Origin-Opener-Policy** and **Cross-Origin-Embedder-Policy** (see `next.config.ts`) so **SharedArrayBuffer** works for the FHE runtime. If FHE fails to init, the swap flow surfaces an error.
+
+### Wallets & extensions
+
+Multiple extensions fighting over `window.ethereum` can break isolation assumptions.
+
+**Recommended for users / demos:**
+
+- Use one wallet extension per browser profile (for example, only MetaMask in that profile).
+- If you need multiple wallets, use separate browser profiles.
+- For the most reliable FHE init, run CipherDEX in a clean desktop profile.
+
+### WalletConnect on localhost
+
+Console WebSocket noise from WalletConnect’s relay is often harmless in dev.
+
+### Zama relayer
+
+Encrypt/decrypt paths need reachability to the Zama testnet relayer (default `relayer.testnet.zama.org`). DNS issues → try [chrome://net-internals/#dns](chrome://net-internals/#dns) cache clear, or set `NEXT_PUBLIC_RELAYER_URL`.
