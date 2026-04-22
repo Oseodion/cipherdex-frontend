@@ -19,6 +19,7 @@ type PoolActivityEvent = {
 
 type Filter = "All" | "cUSDT→cETH" | "cETH→cUSDT" | "Add liquidity" | "Remove liquidity";
 const LOOKBACK_BLOCKS = 60000n;
+const QUICK_LOOKBACK_BLOCKS = 8000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 const formatAge = (ts: number) => {
@@ -40,37 +41,10 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
     if (!publicClient) return;
     setLoading(prev => (events.length === 0 ? true : prev));
     setError(null);
-    try {
-      const latest = await publicClient.getBlockNumber();
-      const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
+    const parseEvents = (logsByType: { swapLogs: any[]; addLogs: any[]; removeLogs: any[] }) => {
       type Tagged = { log: any; kind: PoolActivityEvent["kind"] };
       const rawTagged: Tagged[] = [];
-      const [swapLogs, addLogs, removeLogs] = await Promise.all([
-        fetchEventLogsChunked({
-          publicClient,
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "Swap",
-          fromBlock,
-          toBlock: latest,
-        }),
-        fetchEventLogsChunked({
-          publicClient,
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "LiquidityAdded",
-          fromBlock,
-          toBlock: latest,
-        }),
-        fetchEventLogsChunked({
-          publicClient,
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "LiquidityRemoved",
-          fromBlock,
-          toBlock: latest,
-        }),
-      ]);
+      const { swapLogs, addLogs, removeLogs } = logsByType;
       for (const log of swapLogs as any[]) rawTagged.push({ log, kind: "swap" });
       for (const log of addLogs as any[]) rawTagged.push({ log, kind: "add" });
       for (const log of removeLogs as any[]) rawTagged.push({ log, kind: "remove" });
@@ -114,8 +88,79 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
         }
       }
       parsed.sort((a, b) => b.timestamp - a.timestamp);
+      return parsed;
+    };
 
-      setEvents(parsed);
+    try {
+      const latest = await publicClient.getBlockNumber();
+      const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
+      const quickFrom = latest > QUICK_LOOKBACK_BLOCKS ? latest - QUICK_LOOKBACK_BLOCKS : 0n;
+
+      // Fast first pass.
+      const [quickSwap, quickAdd, quickRemove] = await Promise.all([
+        fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock: quickFrom,
+          toBlock: latest,
+        }),
+        fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "LiquidityAdded",
+          fromBlock: quickFrom,
+          toBlock: latest,
+        }),
+        fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "LiquidityRemoved",
+          fromBlock: quickFrom,
+          toBlock: latest,
+        }),
+      ]);
+      setEvents(parseEvents({ swapLogs: quickSwap, addLogs: quickAdd, removeLogs: quickRemove }));
+      setLoading(false);
+
+      // Background backfill.
+      if (quickFrom > fromBlock) {
+        void Promise.all([
+          fetchEventLogsChunked({
+            publicClient,
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "Swap",
+            fromBlock,
+            toBlock: latest,
+          }),
+          fetchEventLogsChunked({
+            publicClient,
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "LiquidityAdded",
+            fromBlock,
+            toBlock: latest,
+          }),
+          fetchEventLogsChunked({
+            publicClient,
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "LiquidityRemoved",
+            fromBlock,
+            toBlock: latest,
+          }),
+        ])
+          .then(([swapLogs, addLogs, removeLogs]) => {
+            setEvents(parseEvents({ swapLogs, addLogs, removeLogs }));
+          })
+          .catch(() => {
+            // keep quick results
+          });
+      }
     } catch (err: any) {
       setError(err?.message ?? "Failed to load transactions");
     } finally {

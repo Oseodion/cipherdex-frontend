@@ -14,6 +14,7 @@ type SwapRecord = {
   blockNumber: bigint;
 };
 const LOOKBACK_BLOCKS = 60000n;
+const QUICK_LOOKBACK_BLOCKS = 8000n;
 
 const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
@@ -44,24 +45,17 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
       try {
         const latest = await publicClient.getBlockNumber();
         const from = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
-        const rawLogs = await fetchEventLogsChunked({
-          publicClient,
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "Swap",
-          fromBlock: from,
-          toBlock: latest,
-        });
-        // Deduplicate by txHash + logIndex
-        const seen = new Set<string>();
-        const deduped = rawLogs.filter(log => {
-          const key = `${log.transactionHash}:${log.logIndex}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setEvents(
-          deduped
+        const quickFrom = latest > QUICK_LOOKBACK_BLOCKS ? latest - QUICK_LOOKBACK_BLOCKS : 0n;
+        const parse = (rawLogs: any[]) => {
+          // Deduplicate by txHash + logIndex
+          const seen = new Set<string>();
+          const deduped = rawLogs.filter(log => {
+            const key = `${log.transactionHash}:${log.logIndex}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          return deduped
             .map((l: any) => ({
               trader: l.args?.trader,
               aToB: l.args?.aToB,
@@ -70,8 +64,34 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
               blockNumber: l.blockNumber,
             }))
             .filter(e => e.timestamp > 0 && e.trader)
-            .sort((a, b) => b.timestamp - a.timestamp),
-        );
+            .sort((a, b) => b.timestamp - a.timestamp);
+        };
+
+        const quickLogs = await fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock: quickFrom,
+          toBlock: latest,
+        });
+        setEvents(parse(quickLogs));
+        setLoading(false);
+
+        if (quickFrom > from) {
+          void fetchEventLogsChunked({
+            publicClient,
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "Swap",
+            fromBlock: from,
+            toBlock: latest,
+          })
+            .then(fullLogs => setEvents(parse(fullLogs)))
+            .catch(() => {
+              // keep quick results if backfill fails
+            });
+        }
       } catch {
         // Silently fail - still show the page
       } finally {

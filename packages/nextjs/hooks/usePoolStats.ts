@@ -8,6 +8,7 @@ import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_BLOCKS = 60000n;
+const QUICK_LOOKBACK_BLOCKS = 8000n;
 
 const formatAge = (timestampSeconds: number) => {
   const delta = Math.max(0, Math.floor(Date.now() / 1000) - timestampSeconds);
@@ -50,17 +51,7 @@ export function usePoolStats() {
     }
     setError(null);
 
-    try {
-      const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
-      const rawLogs = await fetchEventLogsChunked({
-        publicClient,
-        address: CONTRACTS.pool,
-        abi: PoolABI.abi,
-        eventName: "Swap",
-        fromBlock,
-        toBlock: latestBlock,
-      });
+    const applySwapLogs = (rawLogs: any[]) => {
 
       const uniqueLogs = rawLogs.filter(
         (log, index, self) =>
@@ -106,13 +97,45 @@ export function usePoolStats() {
           return `${sold} → ${bought} (${formatTrader(item.trader)}) · ${formatAge(item.timestamp)}`;
         }),
       );
+    };
+
+    try {
+      const latestBlock = await publicClient.getBlockNumber();
+      const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
+      const quickFrom = latestBlock > QUICK_LOOKBACK_BLOCKS ? latestBlock - QUICK_LOOKBACK_BLOCKS : 0n;
+
+      // First pass: recent window for fast UI.
+      const quickLogs = await fetchEventLogsChunked({
+        publicClient,
+        address: CONTRACTS.pool,
+        abi: PoolABI.abi,
+        eventName: "Swap",
+        fromBlock: quickFrom,
+        toBlock: latestBlock,
+      });
+      applySwapLogs(quickLogs);
+      if (foreground) setLoading(false);
+      setRefreshing(false);
+
+      // Background pass: full lookback for completeness.
+      if (quickFrom > fromBlock) {
+        void fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock,
+          toBlock: latestBlock,
+        })
+          .then(fullLogs => applySwapLogs(fullLogs))
+          .catch(() => {
+            // Keep fast-view data if backfill fails.
+          });
+      }
     } catch (err: any) {
       setError(err?.message ?? "Unable to load pool activity");
-    } finally {
-      if (foreground) {
-        setLoading(false);
-      }
       setRefreshing(false);
+      if (foreground) setLoading(false);
     }
   }, [publicClient, swapEvent]);
 
