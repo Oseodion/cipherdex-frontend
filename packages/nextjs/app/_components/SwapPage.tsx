@@ -1802,11 +1802,7 @@ export function SwapPage() {
                           }}
                           onClick={() => revealBalance(payTokenIndex)}
                         >
-                          {revealed[payTokenIndex]
-                            ? payTokenIndex === 1
-                              ? (cUSDTBalance ?? "▓▓▓▓")
-                              : (cETHBalance ?? "▓▓▓▓")
-                            : "▓▓▓▓"}
+                          {revealed[payTokenIndex] ? displayBals[payTokenIndex] : "▓▓▓▓"}
                         </span>{" "}
                         {payToken.name}
                       </span>
