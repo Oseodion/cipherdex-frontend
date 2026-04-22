@@ -7,6 +7,7 @@ import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { useBalances } from "~~/hooks/useBalances";
 import { CONTRACTS } from "~~/hooks/useCipherDEX";
 import { usePoolInit } from "~~/hooks/usePoolInit";
+import { useWagmiEthers } from "~~/hooks/wagmi/useWagmiEthers";
 
 export function PortfolioPage({
   address,
@@ -19,12 +20,14 @@ export function PortfolioPage({
   isMobile?: boolean;
 }) {
   const { totalShares, rateUSDTperETH } = usePoolInit();
+  const { ethersSigner } = useWagmiEthers();
 
   const { cUSDTBalance, cETHBalance, cUSDTRaw, cETHRaw, decrypt, isDecrypting, canDecrypt } = useBalances(
     address as `0x${string}` | undefined,
     !!address,
     chainId,
     fhevmInstance,
+    ethersSigner as any,
   );
 
   useReadContract({

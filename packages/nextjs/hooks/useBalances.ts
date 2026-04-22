@@ -3,19 +3,19 @@
 import { useCallback, useMemo } from "react";
 import { useReadContract } from "wagmi";
 import { useFHEDecrypt, useInMemoryStorage } from "@fhevm-sdk";
-import { useWagmiEthers } from "./wagmi/useWagmiEthers";
 import TokenABI from "~~/contracts/ConfidentialToken.json";
 import { CONTRACTS } from "./useCipherDEX";
 import type { FhevmInstance } from "@fhevm-sdk";
+import type { ethers } from "ethers";
 
 export function useBalances(
   address: `0x${string}` | undefined,
   isConnected: boolean,
   chainId: number | undefined,
   fhevmInstance: FhevmInstance | undefined,
+  ethersSigner: ethers.JsonRpcSigner | undefined,
 ) {
   const { storage: fhevmDecryptionSignatureStorage } = useInMemoryStorage();
-  const { ethersSigner } = useWagmiEthers();
 
   const { data: cUSDTRawHandle, refetch: refetchUSDT } = useReadContract({
     address: CONTRACTS.cUSDT,

@@ -34,12 +34,13 @@ export function SwapPage() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
   const revealTimeoutRef = useRef<number | null>(null);
+  const decryptKickoffRef = useRef<number | null>(null);
   const [fheUnsupportedReason, setFheUnsupportedReason] = useState<string | null>(null);
   const [swapClickAcknowledged, setSwapClickAcknowledged] = useState(false);
   const [swapPendingHint, setSwapPendingHint] = useState<string | null>(null);
   const swapPendingTimeoutRef = useRef<number | null>(null);
 
-  const { address, isConnected, chainId } = useCipherDEX();
+  const { address, isConnected, chainId, ethersSigner } = useCipherDEX();
   const { data: connectorClient } = useConnectorClient();
   const provider = useMemo(() => {
     // Always prefer the active wagmi connector provider.
@@ -74,7 +75,7 @@ export function SwapPage() {
     decrypt,
     decryptError,
     refetch,
-  } = useBalances(address, isConnected, chainId, fhevmInstance);
+  } = useBalances(address, isConnected, chainId, fhevmInstance, ethersSigner as any);
 
   // --- Faucet: refetch balances on confirmed claim ---
   const handleFaucetSuccess = useCallback(() => {
@@ -159,6 +160,14 @@ export function SwapPage() {
     setPendingReveal(decryptRequest);
     setDecryptRequest(null);
   }, [decryptRequest, isDecrypting, cUSDTBalance, cETHBalance]);
+
+  useEffect(() => {
+    if (decryptRequest === null) return;
+    if (isDecrypting || !canDecrypt) return;
+    if (decryptKickoffRef.current === decryptRequest) return;
+    decryptKickoffRef.current = decryptRequest;
+    decrypt();
+  }, [decryptRequest, canDecrypt, isDecrypting, decrypt]);
 
   useEffect(() => {
     if (decryptRequest === null || !decryptError) return;
@@ -386,6 +395,7 @@ export function SwapPage() {
     if (!isConnected || !address) return;
     if (revealing[n] || runningReveal.current[n]) return;
     setDecryptUiError(null);
+    decryptKickoffRef.current = null;
     if (revealed[n]) {
       setRevealed(prev => ({ ...prev, [n]: false }));
       setDisplayBals(prev => ({ ...prev, [n]: "▓▓▓▓▓▓▓▓" }));
@@ -401,21 +411,6 @@ export function SwapPage() {
     setRevealing(prev => ({ ...prev, [n]: true }));
     setDisplayBals(prev => ({ ...prev, [n]: "▓▓▓▓▓▓▓▓" }));
     setDecryptRequest(n);
-
-    try {
-      const timeoutMs = 20000;
-      await Promise.race([
-        decrypt(),
-        new Promise((_, reject) => {
-          window.setTimeout(() => reject(new Error("Decrypt request timed out on mobile wallet")), timeoutMs);
-        }),
-      ]);
-    } catch (err) {
-      console.error("Balance reveal failed", err);
-      setDecryptUiError("Decrypt confirmation did not complete. Please retry in wallet browser.");
-      setDecryptRequest(null);
-      setRevealing(prev => ({ ...prev, [n]: false }));
-    }
   }
 
   // --- Swap ---
