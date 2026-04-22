@@ -1006,6 +1006,20 @@ export function SwapPage() {
                 <span style={{ color: "#f0ede6", fontWeight: 600 }}>Swap</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    fontSize: "10px",
+                    color: "#8a8680",
+                    border: "1px solid rgba(255,255,245,0.08)",
+                    background: "rgba(255,255,245,0.03)",
+                    borderRadius: "6px",
+                    padding: "3px 6px",
+                    fontFamily: "monospace",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Best reliability: one wallet extension per browser profile
+                </div>
                 <div style={{ fontSize: "12px", color: "#6b6860" }}>
                   Status: <strong style={{ color: "#FFD208" }}>Active</strong> · System operating normally
                 </div>
@@ -1054,6 +1068,9 @@ export function SwapPage() {
                   <div style={{ fontSize: "12px", color: "#8a8680", lineHeight: 1.45 }}>
                     Swaps, encrypted balances, and pool hints need a full desktop browser. For the full CipherDEX
                     experience, open this app on a computer.
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#6b6860", lineHeight: 1.4, marginTop: "6px" }}>
+                    Wallet tip: use one wallet extension per browser profile for the most reliable FHE initialization.
                   </div>
                 </div>
               </div>

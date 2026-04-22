@@ -117,6 +117,15 @@ export function SettingsPage({}: { isMobile?: boolean } = {}) {
         </div>
       </div>
 
+      {/* Wallet provider guidance */}
+      <div style={card}>
+        <div style={sectionLabel}>Wallet Provider Reliability</div>
+        <div style={{ fontSize: "12px", color: "#8a8680", lineHeight: 1.5 }}>
+          For the most reliable FHE initialization, use one wallet extension per browser profile. If you need
+          multiple wallets, use separate browser profiles so providers do not compete for <code>window.ethereum</code>.
+        </div>
+      </div>
+
       {/* Slippage */}
       <div style={card}>
         <div style={sectionLabel}>Slippage Tolerance</div>
