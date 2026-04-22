@@ -130,7 +130,16 @@ export function LiquidityPoolsPage({
       // provider (wagmi updates walletClient after each tx), which causes the
       // relayer fetch inside encrypt() to fail with a COEP/SSL error.
       setStatus("Encrypting amounts…");
-      const [encA, encB] = await Promise.all([encryptWith(b => b.add64(rawA)), encryptWith(b => b.add64(rawB))]);
+      // Stage encryptions so the browser can paint between heavy FHE steps.
+      const encA = await encryptWith(b => b.add64(rawA));
+      await new Promise<void>(resolve => {
+        if (typeof window === "undefined") {
+          resolve();
+          return;
+        }
+        window.requestAnimationFrame(() => resolve());
+      });
+      const encB = await encryptWith(b => b.add64(rawB));
       if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       if (!encA || !encB) throw new Error("Encryption failed");
 
@@ -276,12 +285,6 @@ export function LiquidityPoolsPage({
     fontFamily: "'Cabinet Grotesk',sans-serif",
     outline: "none",
   };
-  /** Spinner only after the brief "Starting …" pre-flight; encryption / txs use the spinner. */
-  const liquidityStartingPhase =
-    !!status &&
-    (status.startsWith("Starting add liquidity") || status.startsWith("Starting remove liquidity"));
-  const showLiquidityButtonSpinner = isLoading && !liquidityStartingPhase;
-
   const activeStatIndex = hoveredStat !== null ? hoveredStat : pinnedStat;
 
   const stat = (i: number, label: string, value: string, disclosure: string) => {
@@ -602,14 +605,8 @@ export function LiquidityPoolsPage({
                 gap: "8px",
               }}
             >
-              {showLiquidityButtonSpinner && (
-                <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
-                  <circle cx="8" cy="8" r="6" fill="none" stroke="#000" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
-                </svg>
-              )}
               {isLoading ? (status ?? "Processing…") : "Add Liquidity"}
             </button>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -649,11 +646,6 @@ export function LiquidityPoolsPage({
                 gap: "8px",
               }}
             >
-              {showLiquidityButtonSpinner && (
-                <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
-                  <circle cx="8" cy="8" r="6" fill="none" stroke="#000" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
-                </svg>
-              )}
               {isLoading ? (status ?? "Processing…") : "Remove Liquidity"}
             </button>
           </div>

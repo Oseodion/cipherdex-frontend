@@ -264,7 +264,16 @@ export function SwapPage() {
     setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
 
     poolRefetch();
-    window.dispatchEvent(new CustomEvent("cipherdex:swap-confirmed", { detail: { txHash: hash } }));
+    window.dispatchEvent(
+      new CustomEvent("cipherdex:swap-confirmed", {
+        detail: {
+          txHash: hash,
+          aToB: isAToBRef.current,
+          trader: address ?? null,
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      }),
+    );
     window.setTimeout(() => poolInitRefetch(), 1200);
 
     if (typeof window !== "undefined") {
@@ -280,7 +289,7 @@ export function SwapPage() {
         resetSwap();
       });
     }, 1800);
-  }, [swapSuccess, isConfirmed, txHash, poolRefetch, poolInitRefetch, resetSwap]);
+  }, [swapSuccess, isConfirmed, txHash, poolRefetch, poolInitRefetch, resetSwap, address]);
 
   useEffect(() => {
     if (!(swapSuccess || isConfirmed)) {
@@ -313,7 +322,12 @@ export function SwapPage() {
         poolRefetch();
         window.dispatchEvent(
           new CustomEvent("cipherdex:swap-confirmed", {
-            detail: { txHash: txHash ?? null },
+            detail: {
+              txHash: txHash ?? null,
+              aToB: isAToBRef.current,
+              trader: address ?? null,
+              timestamp: Math.floor(Date.now() / 1000),
+            },
           }),
         );
         setTimeout(() => poolInitRefetch(), 2000);
@@ -2156,16 +2170,7 @@ export function SwapPage() {
                       gap: "8px",
                     }}
                   >
-                    {isRealSwapping && (
-                      <svg width="16" height="16" viewBox="0 0 16 16" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}>
-                        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
-                      </svg>
-                    )}
-                    {swapClickAcknowledged || isSubmitting || isRealSwapping
-                      ? isRealSwapping
-                        ? "Processing…"
-                        : "Starting swap…"
-                      : fheUnsupportedReason
+                    {fheUnsupportedReason
                         ? "FHE Unsupported on Mobile"
                       : !isValidAmount
                         ? "Enter an amount"

@@ -95,10 +95,23 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
     setSwapSuccess(false);
     try {
       setTxStep(1);
-      const [encAmountIn, encMinAmountOut] = await Promise.all([
-        encryptWith(builder => builder.add64(amountIn)),
-        encryptWith(builder => builder.add64(minAmountOut)),
-      ]);
+      // Run encryption in stages to avoid brief UI unresponsive spikes.
+      await new Promise<void>(resolve => {
+        if (typeof window === "undefined") {
+          resolve();
+          return;
+        }
+        window.requestAnimationFrame(() => resolve());
+      });
+      const encAmountIn = await encryptWith(builder => builder.add64(amountIn));
+      await new Promise<void>(resolve => {
+        if (typeof window === "undefined") {
+          resolve();
+          return;
+        }
+        window.requestAnimationFrame(() => resolve());
+      });
+      const encMinAmountOut = await encryptWith(builder => builder.add64(minAmountOut));
       if (!encAmountIn) throw new Error("Amount encryption failed");
       if (!encMinAmountOut) throw new Error("Encryption failed");
       setTxStep(2);

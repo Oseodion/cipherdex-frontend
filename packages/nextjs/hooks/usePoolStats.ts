@@ -27,6 +27,13 @@ export type SwapRecord = {
   blockNumber: bigint;
 };
 
+type SwapConfirmedDetail = {
+  txHash?: string | null;
+  aToB?: boolean;
+  trader?: string | null;
+  timestamp?: number;
+};
+
 export function usePoolStats() {
   const publicClient = usePublicClient();
   const [activeTraders, setActiveTraders] = useState(0);
@@ -122,12 +129,37 @@ export function usePoolStats() {
   }, [loadPoolMetrics]);
 
   useEffect(() => {
-    const onSwapConfirmed = () => {
-      loadPoolMetrics();
+    const onSwapConfirmed = (evt: Event) => {
+      const detail = (evt as CustomEvent<SwapConfirmedDetail>).detail;
+      const ts = detail?.timestamp ?? Math.floor(Date.now() / 1000);
+      const hasDirection = typeof detail?.aToB === "boolean";
+      const sold = hasDirection && detail.aToB ? "cUSDT" : "cETH";
+      const bought = hasDirection && detail?.aToB === false ? "cUSDT" : "cETH";
+      const traderLabel = detail?.trader ? formatTrader(detail.trader) : "pending";
+      const recent = hasDirection
+        ? `${sold} → ${bought} (${traderLabel}) · ${formatAge(ts)}`
+        : `Swap (${traderLabel}) · ${formatAge(ts)}`;
+
+      setRecentTrades(prev => [recent, ...prev.filter(item => item !== recent)].slice(0, 3));
+      setTotalTrades(prev => prev + 1);
+      setHeatmapCounts(prev => {
+        const next = [...prev];
+        next[next.length - 1] = (next[next.length - 1] ?? 0) + 1;
+        return next;
+      });
+
+      if (detail?.trader) {
+        const trader = detail.trader.toLowerCase();
+        setActiveTraders(prev => (swapRecords.some(r => r.trader.toLowerCase() === trader) ? prev : prev + 1));
+      }
+      // Delay reconciliation slightly so RPC indexers have time to surface the new event.
+      window.setTimeout(() => {
+        loadPoolMetrics();
+      }, 1500);
     };
     window.addEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
     return () => window.removeEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
-  }, [loadPoolMetrics]);
+  }, [loadPoolMetrics, swapRecords]);
 
   return {
     activeTraders,
