@@ -31,6 +31,7 @@ const normalizeDecryptError = (raw: string | null | undefined) => {
 };
 
 export function SwapPage() {
+  const mobileRestrictionMessage = "Desktop required for wallet actions.";
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [revealed, setRevealed] = useState<{ [k: number]: boolean }>({});
   const [revealing, setRevealing] = useState<{ [k: number]: boolean }>({});
@@ -123,6 +124,7 @@ export function SwapPage() {
     refetch: poolRefetch,
   } = usePoolStats();
   const canRevealBalances = !statsLoading;
+  const isMobileReadOnly = isMobile;
   const { poolInitialized, snapshotA, snapshotB, rateUSDTperETH, refetch: poolInitRefetch } = usePoolInit();
 
   // --- Balance reveal animation ---
@@ -428,6 +430,10 @@ export function SwapPage() {
   // --- Balance reveal ---
   async function revealBalance(n: 1 | 2) {
     if (!isConnected || !address) return;
+    if (isMobileReadOnly) {
+      setDecryptUiError(mobileRestrictionMessage);
+      return;
+    }
     if (!canRevealBalances) {
       setDecryptUiError("Please wait for stats to finish loading before revealing balances.");
       return;
@@ -462,6 +468,10 @@ export function SwapPage() {
 
   // --- Swap ---
   async function doSwap() {
+    if (isMobileReadOnly) {
+      setDecryptUiError(mobileRestrictionMessage);
+      return;
+    }
     // flushSync forces the DOM to update immediately so the button/spinner paints
     // before encryption blocks the main thread for several seconds.
     flushSync(() => {
@@ -861,21 +871,27 @@ export function SwapPage() {
           </div>
           <button
             onClick={claim}
-            disabled={!canClaim}
+            disabled={isMobileReadOnly || !canClaim}
             style={{
               width: "100%",
-              background: canClaim ? "#FFD208" : "rgba(255,210,8,0.3)",
+              background: !isMobileReadOnly && canClaim ? "#FFD208" : "rgba(255,210,8,0.3)",
               color: "#000",
               border: "none",
               borderRadius: "8px",
               padding: "8px",
               fontSize: "12px",
               fontWeight: 800,
-              cursor: canClaim ? "pointer" : "not-allowed",
+              cursor: !isMobileReadOnly && canClaim ? "pointer" : "not-allowed",
               transition: "all 0.2s",
             }}
           >
-            {isClaiming ? "Claiming..." : cooldownRemaining > 0 ? `Wait ${cooldownFormatted}` : "Claim from Faucet"}
+            {isMobileReadOnly
+              ? "Desktop required"
+              : isClaiming
+                ? "Claiming..."
+                : cooldownRemaining > 0
+                  ? `Wait ${cooldownFormatted}`
+                  : "Claim from Faucet"}
           </button>
         </div>
       </div>
@@ -1038,7 +1054,23 @@ export function SwapPage() {
                   Cipher<span style={{ color: "#FFD208" }}>DEX</span>
                 </span>
               </div>
-              <RainbowKitCustomConnectButton />
+              <button
+                type="button"
+                disabled
+                title="Desktop required"
+                style={{
+                  border: "1px solid rgba(255,255,245,0.14)",
+                  background: "rgba(255,255,245,0.05)",
+                  color: "#8a8680",
+                  borderRadius: "8px",
+                  padding: "7px 10px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "not-allowed",
+                }}
+              >
+                Desktop required
+              </button>
             </>
           ) : (
             <>
@@ -1110,8 +1142,8 @@ export function SwapPage() {
                     Best on desktop
                   </div>
                   <div style={{ fontSize: "12px", color: "#8a8680", lineHeight: 1.45 }}>
-                    Swaps, encrypted balances, and pool hints need a full desktop browser. For the full CipherDEX
-                    experience, open this app on a computer.
+                    Mobile is view-only. Connect wallet, reveal balances, swap, faucet, and liquidity actions are
+                    desktop-only for reliability.
                   </div>
                 </div>
               </div>
@@ -1361,7 +1393,7 @@ export function SwapPage() {
                         </span>
                         <button
                           onClick={() => revealBalance(n)}
-                          disabled={!canRevealBalances || revealing[n]}
+                          disabled={isMobileReadOnly || !canRevealBalances || revealing[n]}
                           style={{
                             background: "transparent",
                             border: "1px solid rgba(255,255,245,0.08)",
@@ -1369,7 +1401,7 @@ export function SwapPage() {
                             padding: "3px 8px",
                             fontSize: "10px",
                             color: !canRevealBalances ? "#3a3832" : "#6b6860",
-                            cursor: !canRevealBalances || revealing[n] ? "not-allowed" : "pointer",
+                            cursor: isMobileReadOnly || !canRevealBalances || revealing[n] ? "not-allowed" : "pointer",
                             fontFamily: "'Cabinet Grotesk',sans-serif",
                           }}
                         >
@@ -1849,12 +1881,12 @@ export function SwapPage() {
                         <span
                           style={{
                             color: revealed[payTokenIndex] ? "#FFD208" : "#3a3832",
-                            cursor: canRevealBalances ? "pointer" : "not-allowed",
+                            cursor: !isMobileReadOnly && canRevealBalances ? "pointer" : "not-allowed",
                             fontWeight: 700,
                             fontFamily: "monospace",
                           }}
                           onClick={() => {
-                            if (!canRevealBalances) return;
+                            if (isMobileReadOnly || !canRevealBalances) return;
                             revealBalance(payTokenIndex);
                           }}
                         >
@@ -2182,19 +2214,21 @@ export function SwapPage() {
                   {/* Swap button */}
                   <button
                     onClick={doSwap}
-                    disabled={isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason}
+                    disabled={
+                      isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                    }
                     style={{
                       width: "100%",
                       background:
-                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
                           ? "rgba(255,210,8,0.1)"
                           : "#FFD208",
                       color:
-                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
                           ? "#FFD208"
                           : "#000",
                       border:
-                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
                           ? "1px solid rgba(255,210,8,0.22)"
                           : "none",
                       borderRadius: "12px",
@@ -2202,7 +2236,7 @@ export function SwapPage() {
                       fontSize: "14px",
                       fontWeight: 900,
                       cursor:
-                        isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
+                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
                           ? "not-allowed"
                           : "pointer",
                       transition: "background 0.25s, color 0.25s",
@@ -2212,7 +2246,9 @@ export function SwapPage() {
                       gap: "8px",
                     }}
                   >
-                    {fheUnsupportedReason
+                    {isMobileReadOnly
+                        ? "Desktop required"
+                      : fheUnsupportedReason
                         ? "FHE Unsupported on Mobile"
                       : !isValidAmount
                         ? "Enter an amount"
@@ -2614,7 +2650,7 @@ export function SwapPage() {
                     >
                       <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Your Balances</h4>
                       <span style={{ fontSize: "10px", color: "#3a3832" }}>
-                        {canRevealBalances ? "Tap to decrypt" : "Loading stats…"}
+                        {isMobileReadOnly ? "Desktop required" : canRevealBalances ? "Tap to decrypt" : "Loading stats…"}
                       </span>
                     </div>
                     {[
@@ -2656,7 +2692,7 @@ export function SwapPage() {
                           </div>
                           <button
                             onClick={() => revealBalance(token.n as 1 | 2)}
-                            disabled={!canRevealBalances || revealing[token.n]}
+                            disabled={isMobileReadOnly || !canRevealBalances || revealing[token.n]}
                             style={{
                               fontSize: "9px",
                               fontWeight: 700,
@@ -2667,7 +2703,7 @@ export function SwapPage() {
                                 : "1px solid rgba(255,255,245,0.05)",
                               borderRadius: "5px",
                               padding: "3px 9px",
-                              cursor: !canRevealBalances || revealing[token.n] ? "not-allowed" : "pointer",
+                              cursor: isMobileReadOnly || !canRevealBalances || revealing[token.n] ? "not-allowed" : "pointer",
                               marginTop: "3px",
                               display: "block",
                               width: "100%",

@@ -31,6 +31,7 @@ export function LiquidityPoolsPage({
   isMobile?: boolean;
   onSuccess?: () => void;
 }) {
+  const mobileRestrictionMessage = "Desktop required for liquidity actions.";
   const { address, isConnected } = useAccount();
   const { ethersSigner, ethersProvider } = useWagmiEthers();
   const { writeContractAsync } = useWriteContract();
@@ -97,6 +98,10 @@ export function LiquidityPoolsPage({
     : "-";
 
   async function handleAdd() {
+    if (isMobile) {
+      setError(mobileRestrictionMessage);
+      return;
+    }
     let slowEncryptTimer: number | null = null;
     flushSync(() => {
       setIsLoading(true);
@@ -206,6 +211,10 @@ export function LiquidityPoolsPage({
   }
 
   async function handleRemove() {
+    if (isMobile) {
+      setError(mobileRestrictionMessage);
+      return;
+    }
     let slowEncryptTimer: number | null = null;
     flushSync(() => {
       setIsLoading(true);
@@ -588,16 +597,16 @@ export function LiquidityPoolsPage({
             </div>
             <button
               onClick={handleAdd}
-              disabled={isLoading || !isConnected || !canEncrypt || !poolInitialized}
+              disabled={!!isMobile || isLoading || !isConnected || !canEncrypt || !poolInitialized}
               style={{
-                background: isLoading || !isConnected || !poolInitialized ? "rgba(255,210,8,0.3)" : "#FFD208",
+                background: !!isMobile || isLoading || !isConnected || !poolInitialized ? "rgba(255,210,8,0.3)" : "#FFD208",
                 border: "none",
                 borderRadius: "12px",
                 padding: "14px",
                 fontSize: "14px",
                 fontWeight: 800,
                 color: "#000",
-                cursor: isLoading ? "not-allowed" : "pointer",
+                cursor: !!isMobile || isLoading ? "not-allowed" : "pointer",
                 fontFamily: "'Cabinet Grotesk',sans-serif",
                 display: "flex",
                 alignItems: "center",
@@ -605,7 +614,7 @@ export function LiquidityPoolsPage({
                 gap: "8px",
               }}
             >
-              {isLoading ? (status ?? "Processing…") : "Add Liquidity"}
+              {!!isMobile ? mobileRestrictionMessage : isLoading ? (status ?? "Processing…") : "Add Liquidity"}
             </button>
           </div>
         ) : (
@@ -629,16 +638,16 @@ export function LiquidityPoolsPage({
             </div>
             <button
               onClick={handleRemove}
-              disabled={isLoading || !isConnected || !canEncrypt}
+              disabled={!!isMobile || isLoading || !isConnected || !canEncrypt}
               style={{
-                background: isLoading || !isConnected ? "rgba(255,210,8,0.3)" : "#FFD208",
+                background: !!isMobile || isLoading || !isConnected ? "rgba(255,210,8,0.3)" : "#FFD208",
                 border: "none",
                 borderRadius: "12px",
                 padding: "14px",
                 fontSize: "14px",
                 fontWeight: 800,
                 color: "#000",
-                cursor: isLoading ? "not-allowed" : "pointer",
+                cursor: !!isMobile || isLoading ? "not-allowed" : "pointer",
                 fontFamily: "'Cabinet Grotesk',sans-serif",
                 display: "flex",
                 alignItems: "center",
@@ -646,7 +655,7 @@ export function LiquidityPoolsPage({
                 gap: "8px",
               }}
             >
-              {isLoading ? (status ?? "Processing…") : "Remove Liquidity"}
+              {!!isMobile ? mobileRestrictionMessage : isLoading ? (status ?? "Processing…") : "Remove Liquidity"}
             </button>
           </div>
         )}
