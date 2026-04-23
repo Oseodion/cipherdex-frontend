@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { toHex, useFHEEncryption } from "@fhevm-sdk";
 import type { FhevmInstance } from "@fhevm-sdk";
@@ -21,6 +21,8 @@ const POOL_STATS_SUMMARY = "Public on-chain fields only - rough signals, not dec
 function scrambleDisclosure(text: string): string {
   return text.replace(/[^ \-]/g, "▓");
 }
+
+const DISCLOSURE_ANIMATION_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 export function LiquidityPoolsPage({
   fhevmInstance,
@@ -295,14 +297,130 @@ export function LiquidityPoolsPage({
     outline: "none",
   };
   const activeStatIndex = hoveredStat !== null ? hoveredStat : pinnedStat;
+  const disclosureTimersRef = useRef<Record<number, number | null>>({});
+  const [animatedDisclosure, setAnimatedDisclosure] = useState<Record<number, string>>({});
+  const prevActiveStatRef = useRef<number | null>(null);
+  const [hoverActivated, setHoverActivated] = useState(false);
+
+  const statItems = useMemo(
+    () => [
+      {
+        id: 0,
+        label: "Reserve cUSDT",
+        value: snapshotADisplay,
+        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
+      },
+      {
+        id: 1,
+        label: "Reserve cETH",
+        value: snapshotBDisplay,
+        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
+      },
+      {
+        id: 2,
+        label: "Total Pool Shares",
+        value: totalSharesDisplay,
+        disclosure: "Plaintext totalShares field - may not reflect all encrypted LP mints.",
+      },
+      {
+        id: 3,
+        label: "Session adds (this device)",
+        value: `${localNetAdded.usdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${localNetAdded.eth.toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
+        disclosure: "Estimated from this browser for this wallet only - not full on-chain history.",
+      },
+    ],
+    [snapshotADisplay, snapshotBDisplay, totalSharesDisplay, localNetAdded],
+  );
+
+  useEffect(() => {
+    if (hoverActivated || typeof window === "undefined") return;
+    const activateHover = () => {
+      setHoverActivated(true);
+      window.removeEventListener("mousemove", activateHover);
+    };
+    window.addEventListener("mousemove", activateHover, { once: true });
+    return () => {
+      window.removeEventListener("mousemove", activateHover);
+    };
+  }, [hoverActivated]);
+
+  useEffect(() => {
+    setAnimatedDisclosure(prev => {
+      const next = { ...prev };
+      for (const item of statItems) {
+        if (next[item.id] === undefined) {
+          next[item.id] = scrambleDisclosure(item.disclosure);
+        }
+      }
+      return next;
+    });
+  }, [statItems]);
+
+  useEffect(() => {
+    const byId = new Map(statItems.map(item => [item.id, item]));
+    const runAnimation = (id: number, disclosure: string, reveal: boolean) => {
+      const masked = scrambleDisclosure(disclosure);
+      const target = reveal ? disclosure : masked;
+      const source = reveal ? masked : disclosure;
+      if (disclosureTimersRef.current[id]) {
+        window.clearInterval(disclosureTimersRef.current[id]!);
+      }
+      let progress = 0;
+      const maxLen = Math.max(source.length, target.length);
+      const timer = window.setInterval(() => {
+        progress += 1;
+        setAnimatedDisclosure(prev => {
+          const chars = target.split("").map((ch, idx) => {
+            if (ch === " " || ch === "-") return ch;
+            if (idx < progress) return ch;
+            return DISCLOSURE_ANIMATION_CHARS[Math.floor(Math.random() * DISCLOSURE_ANIMATION_CHARS.length)];
+          });
+          return { ...prev, [id]: chars.join("") };
+        });
+        if (progress >= maxLen) {
+          window.clearInterval(timer);
+          disclosureTimersRef.current[id] = null;
+          setAnimatedDisclosure(prev => ({ ...prev, [id]: target }));
+        }
+      }, 22);
+      disclosureTimersRef.current[id] = timer;
+    };
+
+    const prevActive = prevActiveStatRef.current;
+    const nextActive = activeStatIndex;
+
+    if (prevActive !== null && prevActive !== nextActive) {
+      const prevItem = byId.get(prevActive);
+      if (prevItem) runAnimation(prevActive, prevItem.disclosure, false);
+    }
+    if (nextActive !== null && nextActive !== prevActive) {
+      const nextItem = byId.get(nextActive);
+      if (nextItem) runAnimation(nextActive, nextItem.disclosure, true);
+    }
+
+    prevActiveStatRef.current = nextActive;
+  }, [activeStatIndex, statItems]);
+
+  useEffect(() => {
+    return () => {
+      for (const key of Object.keys(disclosureTimersRef.current)) {
+        const timer = disclosureTimersRef.current[Number(key)];
+        if (timer) window.clearInterval(timer);
+      }
+    };
+  }, []);
 
   const stat = (i: number, label: string, value: string, disclosure: string) => {
     const reveal = activeStatIndex === i;
     const masked = scrambleDisclosure(disclosure);
+    const animatedText = animatedDisclosure[i] ?? masked;
     return (
       <div
         key={i}
-        onMouseEnter={() => setHoveredStat(i)}
+        onMouseEnter={() => {
+          if (!hoverActivated) return;
+          setHoveredStat(i);
+        }}
         onMouseLeave={() => setHoveredStat(null)}
         onClick={() => setPinnedStat(p => (p === i ? null : i))}
         onKeyDown={e => {
@@ -344,7 +462,7 @@ export function LiquidityPoolsPage({
             borderTop: "1px solid rgba(255,255,245,0.06)",
           }}
         >
-          <div style={{ position: "relative", minHeight: "44px" }}>
+          <div style={{ position: "relative", height: "44px", overflow: "hidden" }}>
             <div
               style={{
                 fontSize: "10px",
@@ -352,31 +470,12 @@ export function LiquidityPoolsPage({
                 fontFamily: "'Cabinet Grotesk',sans-serif",
                 letterSpacing: "0.02em",
                 color: "#7a7670",
-                opacity: reveal ? 0 : 0.55,
+                opacity: reveal ? 1 : 0.55,
                 transition: "opacity 0.2s ease",
                 userSelect: "none",
               }}
-              aria-hidden
             >
-              {masked}
-            </div>
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: 0,
-                fontSize: "10px",
-                lineHeight: 1.45,
-                fontFamily: "'Cabinet Grotesk',sans-serif",
-                letterSpacing: "0.02em",
-                color: "#a8a49a",
-                opacity: reveal ? 1 : 0,
-                transition: "opacity 0.2s ease",
-                pointerEvents: "none",
-              }}
-            >
-              {disclosure}
+              {animatedText}
             </div>
           </div>
         </div>
