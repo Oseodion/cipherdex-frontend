@@ -556,6 +556,10 @@ export function SwapPage() {
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+  @keyframes pageSwitchIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 `;
 
   const card: React.CSSProperties = {
@@ -1167,6 +1171,7 @@ export function SwapPage() {
               </button>
             </div>
           )}
+          <div key={activeNav} style={{ animation: "pageSwitchIn 220ms ease-out" }}>
           {/* Routed sub-pages */}
           {activeNav === "Transactions" && <TransactionsPage address={address} isMobile={isMobile} />}
           {activeNav === "Liquidity Pools" && (
@@ -2928,6 +2933,7 @@ export function SwapPage() {
               </div>
             </>
           )}
+          </div>
         </main>
       </div>
 
