@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { CONTRACTS } from "~~/hooks/useCipherDEX";
@@ -36,10 +36,12 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("All");
+  const loadRequestRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!publicClient) return;
-    setLoading(prev => (events.length === 0 ? true : prev));
+    const requestId = ++loadRequestRef.current;
+    setLoading(true);
     setError(null);
     const parseEvents = (logsByType: { swapLogs: any[]; addLogs: any[]; removeLogs: any[] }) => {
       type Tagged = { log: any; kind: PoolActivityEvent["kind"] };
@@ -123,6 +125,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
           toBlock: latest,
         }),
       ]);
+      if (requestId !== loadRequestRef.current) return;
       setEvents(parseEvents({ swapLogs: quickSwap, addLogs: quickAdd, removeLogs: quickRemove }));
       setLoading(false);
 
@@ -155,6 +158,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
           }),
         ])
           .then(([swapLogs, addLogs, removeLogs]) => {
+            if (requestId !== loadRequestRef.current) return;
             setEvents(parseEvents({ swapLogs, addLogs, removeLogs }));
           })
           .catch(() => {
@@ -162,11 +166,13 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
           });
       }
     } catch (err: any) {
+      if (requestId !== loadRequestRef.current) return;
       setError(err?.message ?? "Failed to load transactions");
     } finally {
+      if (requestId !== loadRequestRef.current) return;
       setLoading(false);
     }
-  }, [publicClient, events.length]);
+  }, [publicClient]);
 
   useEffect(() => {
     load();
