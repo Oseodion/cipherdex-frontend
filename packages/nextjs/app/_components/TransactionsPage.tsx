@@ -211,13 +211,47 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
   return (
     <div style={{ width: "100%" }}>
       {/* Header */}
-      <div style={{ marginBottom: "22px" }}>
+      <div style={{ marginBottom: "22px", display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
         <h1 style={{ fontSize: "26px", fontWeight: 900, letterSpacing: "-0.04em" }}>
           Transaction <span style={{ color: "#FFD208" }}>History</span>
         </h1>
-        <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
-          Swaps and liquidity changes from the pool contract - amounts stay encrypted on-chain
-        </p>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px" }}>
+          <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
+            Swaps and liquidity changes from the pool contract - amounts stay encrypted on-chain
+          </p>
+          {loading && (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 10px",
+                borderRadius: "999px",
+                border: "1px solid rgba(255,210,8,0.24)",
+                background: "rgba(255,210,8,0.08)",
+                color: "#FFD208",
+                fontSize: "10px",
+                fontFamily: "monospace",
+                fontWeight: 700,
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1.5" />
+                <path d="M5 1a4 4 0 0 1 4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    from="0 5 5"
+                    to="360 5 5"
+                    dur="0.9s"
+                    repeatCount="indefinite"
+                  />
+                </path>
+              </svg>
+              Loading stats…
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

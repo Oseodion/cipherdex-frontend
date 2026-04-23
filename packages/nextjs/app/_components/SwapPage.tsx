@@ -122,6 +122,7 @@ export function SwapPage() {
     refreshing: statsRefreshing,
     refetch: poolRefetch,
   } = usePoolStats();
+  const canRevealBalances = !statsLoading;
   const { poolInitialized, snapshotA, snapshotB, rateUSDTperETH, refetch: poolInitRefetch } = usePoolInit();
 
   // --- Balance reveal animation ---
@@ -427,6 +428,10 @@ export function SwapPage() {
   // --- Balance reveal ---
   async function revealBalance(n: 1 | 2) {
     if (!isConnected || !address) return;
+    if (!canRevealBalances) {
+      setDecryptUiError("Please wait for stats to finish loading before revealing balances.");
+      return;
+    }
     if (revealing[n] || runningReveal.current[n]) return;
     setDecryptUiError(null);
     decryptKickoffRef.current = null;
@@ -1163,6 +1168,39 @@ export function SwapPage() {
                 <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
                   Live pool analytics and your encrypted portfolio
                 </p>
+                {statsLoading && (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      marginTop: "8px",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      border: "1px solid rgba(255,210,8,0.24)",
+                      background: "rgba(255,210,8,0.08)",
+                      color: "#FFD208",
+                      fontSize: "10px",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                    }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                      <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1.5" />
+                      <path d="M5 1a4 4 0 0 1 4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                        <animateTransform
+                          attributeName="transform"
+                          type="rotate"
+                          from="0 5 5"
+                          to="360 5 5"
+                          dur="0.9s"
+                          repeatCount="indefinite"
+                        />
+                      </path>
+                    </svg>
+                    Loading stats…
+                  </div>
+                )}
               </div>
 
               {/* Pool not live notice - disappears once deployer runs initializePool.ts */}
@@ -1323,14 +1361,15 @@ export function SwapPage() {
                         </span>
                         <button
                           onClick={() => revealBalance(n)}
+                          disabled={!canRevealBalances || revealing[n]}
                           style={{
                             background: "transparent",
                             border: "1px solid rgba(255,255,245,0.08)",
                             borderRadius: "6px",
                             padding: "3px 8px",
                             fontSize: "10px",
-                            color: "#6b6860",
-                            cursor: "pointer",
+                            color: !canRevealBalances ? "#3a3832" : "#6b6860",
+                            cursor: !canRevealBalances || revealing[n] ? "not-allowed" : "pointer",
                             fontFamily: "'Cabinet Grotesk',sans-serif",
                           }}
                         >
@@ -1810,11 +1849,14 @@ export function SwapPage() {
                         <span
                           style={{
                             color: revealed[payTokenIndex] ? "#FFD208" : "#3a3832",
-                            cursor: "pointer",
+                            cursor: canRevealBalances ? "pointer" : "not-allowed",
                             fontWeight: 700,
                             fontFamily: "monospace",
                           }}
-                          onClick={() => revealBalance(payTokenIndex)}
+                          onClick={() => {
+                            if (!canRevealBalances) return;
+                            revealBalance(payTokenIndex);
+                          }}
                         >
                           {revealed[payTokenIndex] ? displayBals[payTokenIndex] : "▓▓▓▓"}
                         </span>{" "}
@@ -2571,7 +2613,9 @@ export function SwapPage() {
                       }}
                     >
                       <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Your Balances</h4>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>Tap to decrypt</span>
+                      <span style={{ fontSize: "10px", color: "#3a3832" }}>
+                        {canRevealBalances ? "Tap to decrypt" : "Loading stats…"}
+                      </span>
                     </div>
                     {[
                       { n: 1, name: "cUSDT", sub: "Confidential USDT", icon: <CUSDTIcon large /> },
@@ -2612,7 +2656,7 @@ export function SwapPage() {
                           </div>
                           <button
                             onClick={() => revealBalance(token.n as 1 | 2)}
-                            disabled={revealing[token.n]}
+                            disabled={!canRevealBalances || revealing[token.n]}
                             style={{
                               fontSize: "9px",
                               fontWeight: 700,
@@ -2623,7 +2667,7 @@ export function SwapPage() {
                                 : "1px solid rgba(255,255,245,0.05)",
                               borderRadius: "5px",
                               padding: "3px 9px",
-                              cursor: revealing[token.n] ? "not-allowed" : "pointer",
+                              cursor: !canRevealBalances || revealing[token.n] ? "not-allowed" : "pointer",
                               marginTop: "3px",
                               display: "block",
                               width: "100%",

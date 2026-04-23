@@ -153,6 +153,39 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
           <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
             FHE compliance log - proves trade integrity without revealing amounts
           </p>
+          {loading && (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                marginTop: "8px",
+                padding: "4px 10px",
+                borderRadius: "999px",
+                border: "1px solid rgba(255,210,8,0.24)",
+                background: "rgba(255,210,8,0.08)",
+                color: "#FFD208",
+                fontSize: "10px",
+                fontFamily: "monospace",
+                fontWeight: 700,
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1.5" />
+                <path d="M5 1a4 4 0 0 1 4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    from="0 5 5"
+                    to="360 5 5"
+                    dur="0.9s"
+                    repeatCount="indefinite"
+                  />
+                </path>
+              </svg>
+              Loading stats…
+            </div>
+          )}
         </div>
         <button
           onClick={downloadReport}
