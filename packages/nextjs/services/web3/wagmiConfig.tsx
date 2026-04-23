@@ -15,12 +15,22 @@ export const enabledChains = targetNetworks.find((network: Chain) => network.id 
 export const wagmiConfig = createConfig({
   chains: enabledChains,
   connectors: wagmiConnectors(),
-ssr: false,
+  ssr: false,
   client: ({ chain }) => {
     const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
     const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
-    const primaryUrl = rpcOverrideUrl || alchemyHttpUrl;
-    const rpcFallbacks = primaryUrl ? [http(primaryUrl)] : [http()];
+    const extraSepoliaFallbacks =
+      chain.id === 11155111
+        ? [
+            "https://ethereum-sepolia-rpc.publicnode.com",
+            "https://rpc.sepolia.org",
+            "https://sepolia.gateway.tenderly.co",
+            "https://eth-sepolia.public.blastapi.io",
+          ]
+        : [];
+    const primaryUrl = alchemyHttpUrl || rpcOverrideUrl;
+    const rpcUrls = [primaryUrl, ...extraSepoliaFallbacks].filter((url): url is string => !!url);
+    const rpcFallbacks = rpcUrls.length > 0 ? rpcUrls.map(url => http(url)) : [http()];
     return createClient({
       chain,
       transport: fallback(rpcFallbacks),
