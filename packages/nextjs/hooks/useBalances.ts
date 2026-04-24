@@ -104,6 +104,8 @@ export function useBalances(
     return {
       usdtReady: isValidHandle(usdtHandle),
       ethReady: isValidHandle(ethHandle),
+      usdtHandle: isValidHandle(usdtHandle) ? usdtHandle : undefined,
+      ethHandle: isValidHandle(ethHandle) ? ethHandle : undefined,
     };
   }, [refetchUSDT, refetchETH]);
 
@@ -117,6 +119,8 @@ export function useBalances(
     decrypt,
     decryptError,
     refetch,
+    cUSDTHandle,
+    cETHHandle,
     hasUSDTHandle: !!cUSDTHandle,
     hasETHHandle: !!cETHHandle,
     hasBalances: isConnected && !!address,

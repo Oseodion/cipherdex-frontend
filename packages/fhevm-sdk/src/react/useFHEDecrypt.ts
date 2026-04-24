@@ -45,17 +45,16 @@ export const useFHEDecrypt = (params: {
     const thisSigner = ethersSigner;
     const thisRequests = requests;
 
-    // Capture the current requests key to avoid false "stale" detection on first run
-    lastReqKeyRef.current = requestsKey;
-
     isDecryptingRef.current = true;
     setIsDecrypting(true);
     setMessage("Start decrypt");
     setError(null);
 
     const run = async () => {
-      const isStale = () =>
-        thisChainId !== chainId || thisSigner !== ethersSigner || requestsKey !== lastReqKeyRef.current;
+      // Only abort if wallet or chain changed mid-flight. Do NOT tie staleness to
+      // `requestsKey`: after swaps one ciphertext handle can update before another,
+      // which would flip the key and incorrectly discard a valid userDecrypt result.
+      const isStale = () => thisChainId !== chainId || thisSigner !== ethersSigner;
 
       try {
         const uniqueAddresses = Array.from(new Set(thisRequests.map(r => r.contractAddress)));
@@ -69,11 +68,6 @@ export const useFHEDecrypt = (params: {
         if (!sig) {
           setMessage("Unable to build FHEVM decryption signature");
           setError("SIGNATURE_ERROR: Failed to create decryption signature");
-          return;
-        }
-
-        if (isStale()) {
-          setMessage("Ignore FHEVM decryption");
           return;
         }
 

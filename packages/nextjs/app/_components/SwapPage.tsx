@@ -90,7 +90,10 @@ export function SwapPage() {
     hasUSDTHandle,
     hasETHHandle,
     refetch,
+    cUSDTHandle,
+    cETHHandle,
   } = useBalances(address, isConnected, chainId, fhevmInstance, ethersSigner as any, decryptRequest);
+  const preSwapHandlesRef = useRef<{ usdt?: `0x${string}`; eth?: `0x${string}` }>({});
 
   // --- Faucet: refetch balances on confirmed claim ---
   const handleFaucetSuccess = useCallback(() => {
@@ -248,6 +251,24 @@ export function SwapPage() {
     }
   }, [txHash]);
 
+  const refetchUntilHandlesUpdate = useCallback(async () => {
+    const previous = preSwapHandlesRef.current;
+    if (!previous.usdt && !previous.eth) {
+      await refetchRef.current();
+      return;
+    }
+
+    const maxAttempts = 8;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const refreshed = await refetchRef.current();
+      const usdtUpdated = !previous.usdt || (refreshed.usdtHandle && refreshed.usdtHandle !== previous.usdt);
+      const ethUpdated = !previous.eth || (refreshed.ethHandle && refreshed.ethHandle !== previous.eth);
+      // Wait for both sides to refresh when both existed pre-swap.
+      if (usdtUpdated && ethUpdated) return;
+      await new Promise(resolve => window.setTimeout(resolve, 1200));
+    }
+  }, []);
+
   // Hard fallback: always finalize post-swap UI exactly once per tx hash.
   useEffect(() => {
     const completed = swapSuccess || isConfirmed;
@@ -285,14 +306,14 @@ export function SwapPage() {
     }
 
     window.setTimeout(() => {
-      refetchRef.current().finally(() => {
+      refetchUntilHandlesUpdate().finally(() => {
         setAmountIn("");
         setAmountOut(null);
         animationRanRef.current = false;
         resetSwap();
       });
     }, 1800);
-  }, [swapSuccess, isConfirmed, txHash, poolRefetch, poolInitRefetch, resetSwap, address]);
+  }, [swapSuccess, isConfirmed, txHash, poolRefetch, poolInitRefetch, resetSwap, address, refetchUntilHandlesUpdate]);
 
   useEffect(() => {
     if (!(swapSuccess || isConfirmed)) {
@@ -452,10 +473,12 @@ export function SwapPage() {
       return;
     }
 
-    let handleReady = n === 1 ? hasUSDTHandle : hasETHHandle;
+    // Always refresh handles right before decrypt so reveal uses latest post-swap ciphertext handles.
+    const readiness = await refetch();
+    let handleReady = n === 1 ? readiness.usdtReady : readiness.ethReady;
     if (!handleReady) {
-      const readiness = await refetch();
-      handleReady = n === 1 ? readiness.usdtReady : readiness.ethReady;
+      // Fallback to current local handle state in case RPC reply is lagging.
+      handleReady = n === 1 ? hasUSDTHandle : hasETHHandle;
     }
     if (!handleReady) {
       setDecryptUiError("Encrypted balance is still syncing after swap. Please try again in a few seconds.");
@@ -498,6 +521,10 @@ export function SwapPage() {
         setIsSubmitting(false);
         return;
       }
+      preSwapHandlesRef.current = {
+        usdt: cUSDTHandle,
+        eth: cETHHandle,
+      };
       // Immediately hide displayed balances when a swap attempt starts.
       setRevealing({});
       setRevealed({});
