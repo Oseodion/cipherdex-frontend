@@ -18,6 +18,7 @@ export const wagmiConfig = createConfig({
   ssr: false,
   client: ({ chain }) => {
     const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
+    const preferAlchemyRpc = process.env.NEXT_PUBLIC_PREFER_ALCHEMY_RPC === "true";
     const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
     const extraSepoliaFallbacks =
       chain.id === 11155111
@@ -28,8 +29,12 @@ export const wagmiConfig = createConfig({
             "https://eth-sepolia.public.blastapi.io",
           ]
         : [];
-    const primaryUrl = alchemyHttpUrl || rpcOverrideUrl;
-    const rpcUrls = [primaryUrl, ...extraSepoliaFallbacks].filter((url): url is string => !!url);
+    const primaryUrl = preferAlchemyRpc ? alchemyHttpUrl || rpcOverrideUrl : rpcOverrideUrl || extraSepoliaFallbacks[0] || alchemyHttpUrl;
+    const rpcUrls = Array.from(
+      new Set(
+        [primaryUrl, ...extraSepoliaFallbacks, alchemyHttpUrl].filter((url): url is string => !!url),
+      ),
+    );
     const rpcFallbacks = rpcUrls.length > 0 ? rpcUrls.map(url => http(url)) : [http()];
     return createClient({
       chain,

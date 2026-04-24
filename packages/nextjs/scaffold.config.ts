@@ -21,7 +21,7 @@ if (!rawAlchemyKey) {
   }
 }
 
-const sepoliaOverride = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL?.trim();
+const sepoliaOverride = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL?.trim() || "https://ethereum-sepolia-rpc.publicnode.com";
 
 const scaffoldConfig = {
   // The networks on which your DApp is live
