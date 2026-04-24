@@ -103,7 +103,10 @@ export const useFHEDecrypt = (params: {
           return;
         }
 
-        setResults(res);
+        // Merge so decrypting one handle does not wipe previously decrypted handles.
+        // `useBalances` reads results by the *current* ciphertext handle key, so keeping older entries
+        // around does not affect displayed balances unless the UI still points at an old handle.
+        setResults(prev => ({ ...prev, ...res }));
       } catch (e) {
         const err = e as unknown as { name?: string; message?: string };
         const code = err && typeof err === "object" && "name" in (err as any) ? (err as any).name : "UNKNOWN_ERROR";

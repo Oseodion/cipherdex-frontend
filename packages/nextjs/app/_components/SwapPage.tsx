@@ -398,7 +398,6 @@ export function SwapPage() {
   const payToken = isAToB ? { name: "cUSDT", icon: <CUSDTIcon /> } : { name: "cETH", icon: <CETHIcon /> };
   const receiveToken = isAToB ? { name: "cETH", icon: <CETHIcon /> } : { name: "cUSDT", icon: <CUSDTIcon /> };
   const payTokenIndex = isAToB ? 1 : 2;
-  const receiveTokenIndex = isAToB ? 2 : 1;
   const inputDecimals = isAToB ? 6 : 9;  // cUSDT=6 decimals, cETH=9 decimals
   const outputDecimals = isAToB ? 9 : 6;
   const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -2052,24 +2051,7 @@ export function SwapPage() {
                       >
                         You Receive
                       </span>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>
-                        Bal:{" "}
-                        <span
-                          style={{
-                            color: revealed[receiveTokenIndex] ? "#FFD208" : "#3a3832",
-                            cursor: !isMobileReadOnly && canRevealBalances ? "pointer" : "not-allowed",
-                            fontWeight: 700,
-                            fontFamily: "monospace",
-                          }}
-                          onClick={() => {
-                            if (isMobileReadOnly || !canRevealBalances) return;
-                            revealBalance(receiveTokenIndex);
-                          }}
-                        >
-                          {revealed[receiveTokenIndex] ? displayBals[receiveTokenIndex] : "▓▓▓▓"}
-                        </span>{" "}
-                        {receiveToken.name}
-                      </span>
+                      <span style={{ fontSize: "10px", color: "#3a3832" }}>Encrypted on-chain</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                       <div
