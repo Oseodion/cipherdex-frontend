@@ -18,6 +18,7 @@ const formatAge = (timestampSeconds: number) => {
 };
 
 const formatTrader = (trader: string) => `${trader.slice(0, 6)}...${trader.slice(-4)}`;
+const formatTxHash = (txHash: string) => `${txHash.slice(0, 6)}...${txHash.slice(-4)}`;
 
 export type SwapRecord = {
   trader: string;
@@ -97,7 +98,7 @@ export function usePoolStats() {
         swaps.slice(0, 3).map(item => {
           const sold = item.aToB ? "cUSDT" : "cETH";
           const bought = item.aToB ? "cETH" : "cUSDT";
-          return `${sold} → ${bought} (${formatTrader(item.trader)}) · ${formatAge(item.timestamp)}`;
+          return `${sold} → ${bought} (${formatTrader(item.trader)}) · ${formatAge(item.timestamp)} · ${formatTxHash(item.txHash)}`;
         }),
       );
     };
@@ -136,11 +137,12 @@ export function usePoolStats() {
       const sold = hasDirection && detail.aToB ? "cUSDT" : "cETH";
       const bought = hasDirection && detail?.aToB === false ? "cUSDT" : "cETH";
       const traderLabel = detail?.trader ? formatTrader(detail.trader) : "pending";
+      const txHashLabel = detail?.txHash ? formatTxHash(detail.txHash) : "pending";
       const recent = hasDirection
-        ? `${sold} → ${bought} (${traderLabel}) · ${formatAge(ts)}`
-        : `Swap (${traderLabel}) · ${formatAge(ts)}`;
+        ? `${sold} → ${bought} (${traderLabel}) · ${formatAge(ts)} · ${txHashLabel}`
+        : `Swap (${traderLabel}) · ${formatAge(ts)} · ${txHashLabel}`;
 
-      setRecentTrades(prev => [recent, ...prev.filter(item => item !== recent)].slice(0, 3));
+      setRecentTrades(prev => [recent, ...prev.filter(item => item !== recent && !item.includes(txHashLabel))].slice(0, 3));
       setTotalTrades(prev => prev + 1);
       setHeatmapCounts(prev => {
         const next = [...prev];
