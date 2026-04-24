@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONTRACTS } from "./useCipherDEX";
 import { usePublicClient } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
@@ -34,6 +34,12 @@ type SwapConfirmedDetail = {
   trader?: string | null;
   timestamp?: number;
 };
+type OptimisticSwap = {
+  txHash: string;
+  aToB: boolean;
+  trader: string;
+  timestamp: number;
+};
 
 export function usePoolStats() {
   const publicClient = usePublicClient();
@@ -45,11 +51,14 @@ export function usePoolStats() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadRequestRef = useRef(0);
+  const optimisticSwapsRef = useRef<Map<string, OptimisticSwap>>(new Map());
 
   const swapEvent = useMemo(() => PoolABI.abi.find((item: any) => item.type === "event" && item.name === "Swap"), []);
 
   const loadPoolMetrics = useCallback(async (opts?: { foreground?: boolean }) => {
     if (!publicClient || !CONTRACTS.pool || !swapEvent) return;
+    const requestId = ++loadRequestRef.current;
     const foreground = opts?.foreground ?? false;
     if (foreground) setLoading(true);
     else setRefreshing(true);
@@ -68,7 +77,7 @@ export function usePoolStats() {
       const today = new Date(now);
       today.setHours(0, 0, 0, 0);
 
-      const swaps: SwapRecord[] = uniqueLogs
+      const swapsFromChain: SwapRecord[] = uniqueLogs
         .map((log: any) => ({
           trader: log.args?.trader as string,
           aToB: log.args?.aToB as boolean,
@@ -78,6 +87,22 @@ export function usePoolStats() {
         }))
         .filter(item => item.timestamp > 0 && item.trader)
         .sort((a, b) => b.timestamp - a.timestamp);
+
+      const merged = [...swapsFromChain];
+      for (const optimisticSwap of optimisticSwapsRef.current.values()) {
+        if (!swapsFromChain.some(item => item.txHash === optimisticSwap.txHash)) {
+          merged.push({
+            trader: optimisticSwap.trader,
+            aToB: optimisticSwap.aToB,
+            timestamp: optimisticSwap.timestamp,
+            txHash: optimisticSwap.txHash,
+            blockNumber: 0n,
+          });
+        } else {
+          optimisticSwapsRef.current.delete(optimisticSwap.txHash);
+        }
+      }
+      const swaps = merged.sort((a, b) => b.timestamp - a.timestamp);
 
       swaps.forEach(item => {
         const eventDate = new Date(item.timestamp * 1000);
@@ -114,10 +139,12 @@ export function usePoolStats() {
         fromBlock,
         toBlock: latestBlock,
       });
+      if (requestId !== loadRequestRef.current) return;
       applySwapLogs(logs);
       setRefreshing(false);
       if (foreground) setLoading(false);
     } catch (err: any) {
+      if (requestId !== loadRequestRef.current) return;
       setError(err?.message ?? "Unable to load pool activity");
       setRefreshing(false);
       if (foreground) setLoading(false);
@@ -141,6 +168,14 @@ export function usePoolStats() {
       const recent = hasDirection
         ? `${sold} → ${bought} (${traderLabel}) · ${formatAge(ts)} · ${txHashLabel}`
         : `Swap (${traderLabel}) · ${formatAge(ts)} · ${txHashLabel}`;
+      if (detail?.txHash && hasDirection && detail?.trader) {
+        optimisticSwapsRef.current.set(detail.txHash, {
+          txHash: detail.txHash,
+          aToB: detail.aToB as boolean,
+          trader: detail.trader,
+          timestamp: ts,
+        });
+      }
 
       setRecentTrades(prev => [recent, ...prev.filter(item => item !== recent && !item.includes(txHashLabel))].slice(0, 3));
       setTotalTrades(prev => prev + 1);
