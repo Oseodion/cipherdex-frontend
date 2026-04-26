@@ -67,7 +67,7 @@ export function LiquidityPoolsPage({
   const [hoveredStat, setHoveredStat] = useState<number | null>(null);
   const [pinnedStat, setPinnedStat] = useState<number | null>(null);
   const localLiquidityKey = useMemo(
-    () => `cipherdex_local_liquidity_net:${(address ?? "guest").toLowerCase()}`,
+    () => `cipherdex_local_liquidity_net:${(address ?? "guest").toLowerCase()}:${CONTRACTS.pool.toLowerCase()}`,
     [address],
   );
 
@@ -230,7 +230,7 @@ export function LiquidityPoolsPage({
         }
         return next;
       });
-      setStatus("Liquidity added. Your encrypted LP share increased - reserve stats update on next swap.");
+      setStatus("Liquidity added. Your encrypted LP share increased - reserve stats refresh from current pool state.");
       onSuccess?.();
       window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
       setTimeout(() => refetch(), 2500);
@@ -295,7 +295,7 @@ export function LiquidityPoolsPage({
         args: [toHex(encShares.handles[0]), toHex(encShares.inputProof)],
       });
       await ethersProvider.waitForTransaction(tx as string);
-      setStatus("Liquidity removed. Tokens returned to your wallet - reserve stats update on next swap.");
+      setStatus("Liquidity removed. Tokens returned to your wallet - reserve stats refresh from current pool state.");
       onSuccess?.();
       window.dispatchEvent(new CustomEvent("cipherdex:liquidity-changed"));
       setTimeout(() => refetch(), 2500);

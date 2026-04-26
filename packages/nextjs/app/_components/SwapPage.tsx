@@ -12,7 +12,7 @@ import { useFhevm } from "@fhevm-sdk";
 import { useConnectorClient } from "wagmi";
 import { RainbowKitCustomConnectButton } from "~~/components/helper/RainbowKitCustomConnectButton";
 import { useBalances } from "~~/hooks/useBalances";
-import { useCipherDEX } from "~~/hooks/useCipherDEX";
+import { CONTRACTS, useCipherDEX } from "~~/hooks/useCipherDEX";
 import { useFaucet } from "~~/hooks/useFaucet";
 import { usePoolInit } from "~~/hooks/usePoolInit";
 import { usePoolStats } from "~~/hooks/usePoolStats";
@@ -55,6 +55,10 @@ export function SwapPage() {
   const swapPendingTimeoutRef = useRef<number | null>(null);
 
   const { address, isConnected, chainId, ethersSigner } = useCipherDEX();
+  const proofsStorageKey = useMemo(
+    () => `cipherdex_fhe_proofs:${(address ?? "guest").toLowerCase()}:${CONTRACTS.pool.toLowerCase()}`,
+    [address],
+  );
   const { data: connectorClient } = useConnectorClient();
   const provider = useMemo(() => {
     // Always prefer the active wagmi connector provider.
@@ -312,8 +316,8 @@ export function SwapPage() {
     window.setTimeout(() => poolInitRefetch(), 1200);
 
     if (typeof window !== "undefined") {
-      const prev = parseInt(localStorage.getItem("cipherdex_fhe_proofs") ?? "0", 10);
-      localStorage.setItem("cipherdex_fhe_proofs", String(prev + 2));
+      const prev = parseInt(localStorage.getItem(proofsStorageKey) ?? "0", 10);
+      localStorage.setItem(proofsStorageKey, String(prev + 2));
     }
 
     window.setTimeout(() => {
@@ -367,8 +371,8 @@ export function SwapPage() {
         );
         setTimeout(() => poolInitRefetch(), 2000);
         if (typeof window !== "undefined") {
-          const prev = parseInt(localStorage.getItem("cipherdex_fhe_proofs") ?? "0", 10);
-          localStorage.setItem("cipherdex_fhe_proofs", String(prev + 2));
+          const prev = parseInt(localStorage.getItem(proofsStorageKey) ?? "0", 10);
+          localStorage.setItem(proofsStorageKey, String(prev + 2));
         }
         setTimeout(() => resetSwap(), 300);
         setAmountIn("");
@@ -386,7 +390,7 @@ export function SwapPage() {
       }
     }, 16);
     return () => clearInterval(iv);
-  }, [swapSuccess, isConfirmed, resetSwap, poolRefetch, poolInitRefetch, txHash]);
+  }, [swapSuccess, isConfirmed, resetSwap, poolRefetch, poolInitRefetch, txHash, proofsStorageKey]);
 
   // Use live pool snapshots; fall back to a static reference rate when pool isn't initialized
   const RATE = rateUSDTperETH ?? 2341.5;

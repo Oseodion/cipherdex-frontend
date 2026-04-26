@@ -20,23 +20,24 @@ const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
 export function AuditViewPage({ address, isMobile }: { address?: string; isMobile?: boolean }) {
   const publicClient = usePublicClient();
+  const proofStorageKey = `cipherdex_fhe_proofs:${(address ?? "guest").toLowerCase()}:${CONTRACTS.pool.toLowerCase()}`;
   const [events, setEvents] = useState<SwapRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [proofCount, setProofCount] = useState(() => {
     if (typeof window === "undefined") return 0;
-    const stored = localStorage.getItem("cipherdex_fhe_proofs");
+    const stored = localStorage.getItem(proofStorageKey);
     return stored ? parseInt(stored, 10) : 0;
   });
 
   useEffect(() => {
     const refreshProofCount = () => {
-      const stored = localStorage.getItem("cipherdex_fhe_proofs");
+      const stored = localStorage.getItem(proofStorageKey);
       setProofCount(stored ? parseInt(stored, 10) : 0);
     };
     refreshProofCount();
     window.addEventListener("cipherdex:swap-confirmed", refreshProofCount);
     return () => window.removeEventListener("cipherdex:swap-confirmed", refreshProofCount);
-  }, []);
+  }, [proofStorageKey]);
 
   useEffect(() => {
     if (!publicClient) return;
@@ -124,6 +125,12 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
     a.download = "cipherdex-audit-report.json";
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function resetLocalProofCounter() {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem(proofStorageKey);
+    setProofCount(0);
   }
 
   const card: React.CSSProperties = {
@@ -386,7 +393,7 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
               marginBottom: "4px",
             }}
           >
-            FHE Proofs Verified This Session
+            FHE Proofs (Local Session Estimate)
           </div>
           <div style={{ fontSize: "28px", fontWeight: 900, fontFamily: "monospace", color: "#FFD208" }}>
             {proofCount}
@@ -397,6 +404,23 @@ export function AuditViewPage({ address, isMobile }: { address?: string; isMobil
           <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px", fontFamily: "monospace" }}>
             Estimated on-chain proofs in loaded history: {events.length * 2}
           </div>
+          <button
+            onClick={resetLocalProofCounter}
+            style={{
+              marginTop: "10px",
+              background: "rgba(255,255,245,0.04)",
+              border: "1px solid rgba(255,255,245,0.12)",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              fontSize: "10px",
+              color: "#6b6860",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "monospace",
+            }}
+          >
+            Reset local counter
+          </button>
         </div>
       </div>
 
