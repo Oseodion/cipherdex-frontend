@@ -340,13 +340,13 @@ export function LiquidityPoolsPage({
         id: 0,
         label: "Reserve cUSDT",
         value: snapshotADisplay,
-        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
+        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
       },
       {
         id: 1,
         label: "Reserve cETH",
         value: snapshotBDisplay,
-        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
+        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
       },
       {
         id: 2,
@@ -575,13 +575,13 @@ export function LiquidityPoolsPage({
           0,
           "Reserve cUSDT",
           snapshotADisplay,
-          "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
+          "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
         )}
         {stat(
           1,
           "Reserve cETH",
           snapshotBDisplay,
-          "On-chain snapshot divisor used for pool math - not full TVL; updates when swaps run.",
+          "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
         )}
         {stat(
           2,
