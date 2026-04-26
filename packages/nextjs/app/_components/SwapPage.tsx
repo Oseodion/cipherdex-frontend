@@ -269,6 +269,31 @@ export function SwapPage() {
     }
   }, []);
 
+  const ensureFreshHandleForToken = useCallback(
+    async (token: 1 | 2) => {
+      const previousHandle = token === 1 ? preSwapHandlesRef.current.usdt : preSwapHandlesRef.current.eth;
+      const maxAttempts = 6;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const refreshed = await refetchRef.current();
+        const ready = token === 1 ? refreshed.usdtReady : refreshed.ethReady;
+        const currentHandle = token === 1 ? refreshed.usdtHandle : refreshed.ethHandle;
+        if (ready && currentHandle) {
+          const changed = !previousHandle || currentHandle !== previousHandle;
+          if (changed) {
+            if (token === 1) preSwapHandlesRef.current.usdt = currentHandle;
+            else preSwapHandlesRef.current.eth = currentHandle;
+            return { ready: true, changed: true };
+          }
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 1000));
+      }
+
+      const fallbackReady = token === 1 ? hasUSDTHandle : hasETHHandle;
+      return { ready: fallbackReady, changed: !previousHandle };
+    },
+    [hasUSDTHandle, hasETHHandle],
+  );
+
   // Hard fallback: always finalize post-swap UI exactly once per tx hash.
   useEffect(() => {
     const completed = swapSuccess || isConfirmed;
@@ -473,15 +498,13 @@ export function SwapPage() {
       return;
     }
 
-    // Always refresh handles right before decrypt so reveal uses latest post-swap ciphertext handles.
-    const readiness = await refetch();
-    let handleReady = n === 1 ? readiness.usdtReady : readiness.ethReady;
-    if (!handleReady) {
-      // Fallback to current local handle state in case RPC reply is lagging.
-      handleReady = n === 1 ? hasUSDTHandle : hasETHHandle;
-    }
-    if (!handleReady) {
+    const freshness = await ensureFreshHandleForToken(n);
+    if (!freshness.ready) {
       setDecryptUiError("Encrypted balance is still syncing after swap. Please try again in a few seconds.");
+      return;
+    }
+    if (!freshness.changed) {
+      setDecryptUiError("Balance update is still syncing on Sepolia. Please retry reveal in a few seconds.");
       return;
     }
     setRevealing(prev => ({ ...prev, [n]: true }));
