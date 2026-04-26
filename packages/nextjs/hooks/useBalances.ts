@@ -85,20 +85,32 @@ export function useBalances(
     requests,
   });
 
-  const formatBalance = (raw: bigint | undefined, decimals: number) => {
+  const formatBalance = (
+    raw: bigint | undefined,
+    decimals: number,
+    maxFractionDigits = 4,
+    minFractionDigits = 2,
+  ) => {
     if (raw === undefined) return null;
     const divisor = BigInt(10 ** decimals);
     const whole = raw / divisor;
     const fraction = raw % divisor;
-    const fractionStr = fraction.toString().padStart(decimals, "0").slice(0, 1);
-    return `${whole.toLocaleString()}.${fractionStr}`;
+    const boundedMaxDigits = Math.max(1, Math.min(maxFractionDigits, decimals));
+    const boundedMinDigits = Math.max(0, Math.min(minFractionDigits, boundedMaxDigits));
+    const fullFraction = fraction.toString().padStart(decimals, "0");
+    let shownFraction = fullFraction.slice(0, boundedMaxDigits);
+    shownFraction = shownFraction.replace(/0+$/, "");
+    if (shownFraction.length < boundedMinDigits) {
+      shownFraction = fullFraction.slice(0, boundedMinDigits);
+    }
+    return shownFraction.length > 0 ? `${whole.toLocaleString()}.${shownFraction}` : whole.toLocaleString();
   };
 
   const cUSDTRaw = cUSDTHandle ? results[cUSDTHandle as string] as bigint : undefined;
   const cETHRaw = cETHHandle ? results[cETHHandle as string] as bigint : undefined;
 
-  const cUSDTBalance = formatBalance(cUSDTRaw, 6);
-  const cETHBalance = formatBalance(cETHRaw, 9);
+  const cUSDTBalance = formatBalance(cUSDTRaw, 6, 4, 2);
+  const cETHBalance = formatBalance(cETHRaw, 9, 4, 4);
 
   const refetch = useCallback(async () => {
     const [usdt, eth] = await Promise.all([refetchUSDT(), refetchETH()]);
