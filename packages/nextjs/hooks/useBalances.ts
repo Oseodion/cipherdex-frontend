@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useReadContract } from "wagmi";
 import { useFHEDecrypt, useInMemoryStorage } from "@fhevm-sdk";
 import TokenABI from "~~/contracts/ConfidentialToken.json";
@@ -21,6 +21,7 @@ export function useBalances(
   decryptTarget?: 1 | 2 | null,
 ) {
   const { storage: fhevmDecryptionSignatureStorage } = useInMemoryStorage();
+  const [latestHandles, setLatestHandles] = useState<{ usdt?: `0x${string}`; eth?: `0x${string}` }>({});
 
   const { data: cUSDTRawHandle, refetch: refetchUSDT } = useReadContract({
     address: CONTRACTS.cUSDT,
@@ -34,7 +35,8 @@ export function useBalances(
     },
   });
   const cUSDTHandleRaw = cUSDTRawHandle as `0x${string}` | undefined;
-  const cUSDTHandle = isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined;
+  const cUSDTHandle =
+    latestHandles.usdt ?? (isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined);
 
   const { data: cETHRawHandle, refetch: refetchETH } = useReadContract({
     address: CONTRACTS.cETH,
@@ -48,7 +50,8 @@ export function useBalances(
     },
   });
   const cETHHandleRaw = cETHRawHandle as `0x${string}` | undefined;
-  const cETHHandle = isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined;
+  const cETHHandle =
+    latestHandles.eth ?? (isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined);
 
   const requests = useMemo(() => {
     if (!cUSDTHandle && !cETHHandle) return undefined;
@@ -101,13 +104,25 @@ export function useBalances(
     const [usdt, eth] = await Promise.all([refetchUSDT(), refetchETH()]);
     const usdtHandle = usdt.data as `0x${string}` | undefined;
     const ethHandle = eth.data as `0x${string}` | undefined;
+    const nextUSDT = isValidHandle(usdtHandle) ? usdtHandle : undefined;
+    const nextETH = isValidHandle(ethHandle) ? ethHandle : undefined;
+    setLatestHandles(prev => ({
+      usdt: nextUSDT ?? prev.usdt,
+      eth: nextETH ?? prev.eth,
+    }));
     return {
-      usdtReady: isValidHandle(usdtHandle),
-      ethReady: isValidHandle(ethHandle),
-      usdtHandle: isValidHandle(usdtHandle) ? usdtHandle : undefined,
-      ethHandle: isValidHandle(ethHandle) ? ethHandle : undefined,
+      usdtReady: !!nextUSDT,
+      ethReady: !!nextETH,
+      usdtHandle: nextUSDT,
+      ethHandle: nextETH,
     };
   }, [refetchUSDT, refetchETH]);
+
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setLatestHandles({});
+    }
+  }, [isConnected, address]);
 
   return {
     cUSDTBalance,
