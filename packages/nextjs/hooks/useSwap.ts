@@ -13,6 +13,21 @@ import { useFHEEncryption, toHex } from "@fhevm-sdk";
 // FHEVM swap operations are gas-intensive; auto-estimation often exceeds chain limits.
 // 10M gas covers the FHE mul/div/select operations in CipherDEXPool.swap().
 const SWAP_GAS_LIMIT = 10_000_000n;
+const RELAYER_RETRY_DELAYS_MS = [800, 1500];
+
+const isTransientRelayerError = (err: unknown) => {
+  const raw = typeof err === "string" ? err : (err as any)?.message ?? "";
+  const msg = String(raw).toLowerCase();
+  return (
+    msg.includes("input_proof") ||
+    msg.includes("input-proof") ||
+    msg.includes("relayer") ||
+    msg.includes("fetch post failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("err_ssl_bad_record_mac_alert")
+  );
+};
 
 export function useSwap(fhevmInstance: FhevmInstance | undefined) {
   const { address, isConnected } = useAccount();
@@ -94,6 +109,21 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
     setSwapError(null);
     setSwapSuccess(false);
     try {
+      const encryptWithRetry = async (build: (builder: any) => void, label: string) => {
+        let lastErr: unknown;
+        for (let attempt = 0; attempt <= RELAYER_RETRY_DELAYS_MS.length; attempt++) {
+          try {
+            return await encryptWith(build);
+          } catch (err) {
+            lastErr = err;
+            if (!isTransientRelayerError(err) || attempt === RELAYER_RETRY_DELAYS_MS.length) {
+              throw err;
+            }
+            await new Promise(resolve => window.setTimeout(resolve, RELAYER_RETRY_DELAYS_MS[attempt]));
+          }
+        }
+        throw lastErr ?? new Error(`${label} encryption failed`);
+      };
       setTxStep(1);
       // Run encryption in stages to avoid brief UI unresponsive spikes.
       await new Promise<void>(resolve => {
@@ -103,7 +133,7 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
         }
         window.requestAnimationFrame(() => resolve());
       });
-      const encAmountIn = await encryptWith(builder => builder.add64(amountIn));
+      const encAmountIn = await encryptWithRetry(builder => builder.add64(amountIn), "Amount");
       await new Promise<void>(resolve => {
         if (typeof window === "undefined") {
           resolve();
@@ -111,7 +141,7 @@ export function useSwap(fhevmInstance: FhevmInstance | undefined) {
         }
         window.requestAnimationFrame(() => resolve());
       });
-      const encMinAmountOut = await encryptWith(builder => builder.add64(minAmountOut));
+      const encMinAmountOut = await encryptWithRetry(builder => builder.add64(minAmountOut), "Min output");
       if (!encAmountIn) throw new Error("Amount encryption failed");
       if (!encMinAmountOut) throw new Error("Encryption failed");
       setTxStep(2);
