@@ -46,6 +46,7 @@ export function SwapPage() {
   const [mobileDesktopHintDismissed, setMobileDesktopHintDismissed] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
+  const [balanceSyncing, setBalanceSyncing] = useState<{ [k: number]: boolean }>({ 1: false, 2: false });
   const revealTimeoutRef = useRef<number | null>(null);
   const decryptKickoffRef = useRef<number | null>(null);
   const [fheUnsupportedReason, setFheUnsupportedReason] = useState<string | null>(null);
@@ -255,18 +256,30 @@ export function SwapPage() {
     const previous = preSwapHandlesRef.current;
     if (!previous.usdt && !previous.eth) {
       await refetchRef.current();
+      setBalanceSyncing({ 1: false, 2: false });
       return;
     }
+
+    let usdtSynced = !previous.usdt;
+    let ethSynced = !previous.eth;
+    setBalanceSyncing({ 1: !usdtSynced, 2: !ethSynced });
 
     const maxAttempts = 8;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const refreshed = await refetchRef.current();
-      const usdtUpdated = !previous.usdt || (refreshed.usdtHandle && refreshed.usdtHandle !== previous.usdt);
-      const ethUpdated = !previous.eth || (refreshed.ethHandle && refreshed.ethHandle !== previous.eth);
-      // Wait for both sides to refresh when both existed pre-swap.
-      if (usdtUpdated && ethUpdated) return;
+      if (!usdtSynced && refreshed.usdtHandle && refreshed.usdtHandle !== previous.usdt) {
+        usdtSynced = true;
+        preSwapHandlesRef.current.usdt = refreshed.usdtHandle;
+      }
+      if (!ethSynced && refreshed.ethHandle && refreshed.ethHandle !== previous.eth) {
+        ethSynced = true;
+        preSwapHandlesRef.current.eth = refreshed.ethHandle;
+      }
+      setBalanceSyncing({ 1: !usdtSynced, 2: !ethSynced });
+      if (usdtSynced && ethSynced) return;
       await new Promise(resolve => window.setTimeout(resolve, 1200));
     }
+    setBalanceSyncing({ 1: false, 2: false });
   }, []);
 
   const ensureFreshHandleForToken = useCallback(
@@ -485,6 +498,10 @@ export function SwapPage() {
       return;
     }
     if (revealing[n] || runningReveal.current[n]) return;
+    if (balanceSyncing[n]) {
+      setDecryptUiError("Balance update is still syncing on Sepolia. Please retry reveal in a few seconds.");
+      return;
+    }
     setDecryptUiError(null);
     decryptKickoffRef.current = null;
     if (revealed[n]) {
@@ -1451,7 +1468,7 @@ export function SwapPage() {
                         </span>
                         <button
                           onClick={() => revealBalance(n)}
-                          disabled={isMobileReadOnly || !canRevealBalances || revealing[n]}
+                          disabled={isMobileReadOnly || !canRevealBalances || revealing[n] || balanceSyncing[n]}
                           style={{
                             background: "transparent",
                             border: "1px solid rgba(255,255,245,0.08)",
@@ -1459,11 +1476,14 @@ export function SwapPage() {
                             padding: "3px 8px",
                             fontSize: "10px",
                             color: !canRevealBalances ? "#3a3832" : "#6b6860",
-                            cursor: isMobileReadOnly || !canRevealBalances || revealing[n] ? "not-allowed" : "pointer",
+                            cursor:
+                              isMobileReadOnly || !canRevealBalances || revealing[n] || balanceSyncing[n]
+                                ? "not-allowed"
+                                : "pointer",
                             fontFamily: "'Cabinet Grotesk',sans-serif",
                           }}
                         >
-                          {revealed[n] ? "Hide" : revealing[n] ? "…" : "Reveal"}
+                          {balanceSyncing[n] ? "Syncing…" : revealed[n] ? "Hide" : revealing[n] ? "…" : "Reveal"}
                         </button>
                       </div>
                     </div>
@@ -2750,7 +2770,7 @@ export function SwapPage() {
                           </div>
                           <button
                             onClick={() => revealBalance(token.n as 1 | 2)}
-                            disabled={isMobileReadOnly || !canRevealBalances || revealing[token.n]}
+                            disabled={isMobileReadOnly || !canRevealBalances || revealing[token.n] || balanceSyncing[token.n]}
                             style={{
                               fontSize: "9px",
                               fontWeight: 700,
@@ -2761,14 +2781,17 @@ export function SwapPage() {
                                 : "1px solid rgba(255,255,245,0.05)",
                               borderRadius: "5px",
                               padding: "3px 9px",
-                              cursor: isMobileReadOnly || !canRevealBalances || revealing[token.n] ? "not-allowed" : "pointer",
+                              cursor:
+                                isMobileReadOnly || !canRevealBalances || revealing[token.n] || balanceSyncing[token.n]
+                                  ? "not-allowed"
+                                  : "pointer",
                               marginTop: "3px",
                               display: "block",
                               width: "100%",
                               transition: "all 0.3s",
                             }}
                           >
-                            {revealing[token.n] ? "Decrypting…" : revealed[token.n] ? "Hide" : "Reveal"}
+                            {balanceSyncing[token.n] ? "Syncing…" : revealing[token.n] ? "Decrypting…" : revealed[token.n] ? "Hide" : "Reveal"}
                           </button>
                         </div>
                       </div>
