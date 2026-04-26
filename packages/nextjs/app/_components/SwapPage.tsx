@@ -289,7 +289,7 @@ export function SwapPage() {
       }
 
       const fallbackReady = token === 1 ? hasUSDTHandle : hasETHHandle;
-      return { ready: fallbackReady, changed: !previousHandle };
+      return { ready: fallbackReady, changed: false };
     },
     [hasUSDTHandle, hasETHHandle],
   );
@@ -544,9 +544,12 @@ export function SwapPage() {
         setIsSubmitting(false);
         return;
       }
+      // Capture a strict pre-swap baseline from a fresh contract read so post-swap
+      // reveal gating can reliably detect handle rotation for both tokens.
+      const baseline = await refetchRef.current();
       preSwapHandlesRef.current = {
-        usdt: cUSDTHandle,
-        eth: cETHHandle,
+        usdt: baseline.usdtHandle ?? cUSDTHandle,
+        eth: baseline.ethHandle ?? cETHHandle,
       };
       // Immediately hide displayed balances when a swap attempt starts.
       setRevealing({});
