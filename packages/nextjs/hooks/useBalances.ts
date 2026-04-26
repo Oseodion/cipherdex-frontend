@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useReadContract } from "wagmi";
 import { useFHEDecrypt, useInMemoryStorage } from "@fhevm-sdk";
 import TokenABI from "~~/contracts/ConfidentialToken.json";
@@ -21,7 +21,7 @@ export function useBalances(
   decryptTarget?: 1 | 2 | null,
 ) {
   const { storage: fhevmDecryptionSignatureStorage } = useInMemoryStorage();
-  const [latestHandles, setLatestHandles] = useState<{ usdt?: `0x${string}`; eth?: `0x${string}` }>({});
+  const latestHandlesRef = useRef<{ usdt?: `0x${string}`; eth?: `0x${string}` }>({});
 
   const { data: cUSDTRawHandle, refetch: refetchUSDT } = useReadContract({
     address: CONTRACTS.cUSDT,
@@ -36,7 +36,7 @@ export function useBalances(
   });
   const cUSDTHandleRaw = cUSDTRawHandle as `0x${string}` | undefined;
   const cUSDTHandle =
-    latestHandles.usdt ?? (isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined);
+    latestHandlesRef.current.usdt ?? (isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined);
 
   const { data: cETHRawHandle, refetch: refetchETH } = useReadContract({
     address: CONTRACTS.cETH,
@@ -51,7 +51,7 @@ export function useBalances(
   });
   const cETHHandleRaw = cETHRawHandle as `0x${string}` | undefined;
   const cETHHandle =
-    latestHandles.eth ?? (isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined);
+    latestHandlesRef.current.eth ?? (isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined);
 
   const requests = useMemo(() => {
     if (!cUSDTHandle && !cETHHandle) return undefined;
@@ -106,10 +106,10 @@ export function useBalances(
     const ethHandle = eth.data as `0x${string}` | undefined;
     const nextUSDT = isValidHandle(usdtHandle) ? usdtHandle : undefined;
     const nextETH = isValidHandle(ethHandle) ? ethHandle : undefined;
-    setLatestHandles(prev => ({
-      usdt: nextUSDT ?? prev.usdt,
-      eth: nextETH ?? prev.eth,
-    }));
+    latestHandlesRef.current = {
+      usdt: nextUSDT ?? latestHandlesRef.current.usdt,
+      eth: nextETH ?? latestHandlesRef.current.eth,
+    };
     return {
       usdtReady: !!nextUSDT,
       ethReady: !!nextETH,
@@ -120,7 +120,7 @@ export function useBalances(
 
   useEffect(() => {
     if (!isConnected || !address) {
-      setLatestHandles({});
+      latestHandlesRef.current = {};
     }
   }, [isConnected, address]);
 
