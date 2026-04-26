@@ -31,10 +31,10 @@ User input amount
 
 ## Deployed contracts (Sepolia)
 
-- cUSDT (v2): `0x22a96c71fA47A26C7E8a6725235A31e9e204A2AB`
-- cETH (v2): `0xb232fc05c4b6E24eC3111f5342E39F8960176Dba`
-- CipherDEXPool (v2): `0x4e879AcfC307BD2a1166FaCC5EaD9380550431CA`
-- CipherDEXFaucet (v2): `0x680a7C30BA61249cCfD99AD875581A023fEB4Fb0`
+- cUSDT: [`0x22a96c71fA47A26C7E8a6725235A31e9e204A2AB`](https://sepolia.etherscan.io/address/0x22a96c71fA47A26C7E8a6725235A31e9e204A2AB)
+- cETH: [`0xb232fc05c4b6E24eC3111f5342E39F8960176Dba`](https://sepolia.etherscan.io/address/0xb232fc05c4b6E24eC3111f5342E39F8960176Dba)
+- CipherDEXPool: [`0x4e879AcfC307BD2a1166FaCC5EaD9380550431CA`](https://sepolia.etherscan.io/address/0x4e879AcfC307BD2a1166FaCC5EaD9380550431CA)
+- CipherDEXFaucet: [`0x680a7C30BA61249cCfD99AD875581A023fEB4Fb0`](https://sepolia.etherscan.io/address/0x680a7C30BA61249cCfD99AD875581A023fEB4Fb0)
 
 Sepolia explorer: [https://sepolia.etherscan.io](https://sepolia.etherscan.io)
 
@@ -89,7 +89,7 @@ Optional:
 - CipherDEX includes RPC fallback handling for smoother Sepolia demos.
 - For deterministic testing, use a dedicated Sepolia RPC in `NEXT_PUBLIC_SEPOLIA_RPC_URL`.
 - If multiple wallet extensions are installed, provider injection order can vary by session.
-- Current production is on the v2 pool contracts above; stats/history shown in app reflect the v2 epoch.
+- Stats and history shown in app reflect the currently configured deployed contracts above.
 
 ## Security note
 
