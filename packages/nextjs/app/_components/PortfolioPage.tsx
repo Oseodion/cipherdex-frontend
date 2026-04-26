@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FhevmInstance } from "@fhevm-sdk";
 import { useReadContract } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
@@ -8,6 +8,17 @@ import { useBalances } from "~~/hooks/useBalances";
 import { CONTRACTS } from "~~/hooks/useCipherDEX";
 import { usePoolInit } from "~~/hooks/usePoolInit";
 import { useWagmiEthers } from "~~/hooks/wagmi/useWagmiEthers";
+
+const normalizeDecryptError = (raw: string) => {
+  const msg = raw.toLowerCase();
+  if (msg.includes("not authorized")) {
+    return "Wallet is not authorized for this ciphertext yet. Wait a few seconds and try again.";
+  }
+  if (msg.includes("networkerror") || msg.includes("failed to fetch") || msg.includes("relayer")) {
+    return "Relayer request failed. Check network and retry reveal.";
+  }
+  return raw;
+};
 
 export function PortfolioPage({
   address,
@@ -21,14 +32,76 @@ export function PortfolioPage({
 }) {
   const { totalShares, rateUSDTperETH } = usePoolInit();
   const { ethersSigner } = useWagmiEthers();
+  const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
+  const revealTimeoutRef = useRef<number | null>(null);
 
-  const { cUSDTBalance, cETHBalance, cUSDTRaw, cETHRaw, decrypt, isDecrypting, canDecrypt } = useBalances(
-    address as `0x${string}` | undefined,
-    !!address,
-    chainId,
-    fhevmInstance,
-    ethersSigner as any,
-  );
+  const {
+    cUSDTBalance,
+    cETHBalance,
+    cUSDTRaw,
+    cETHRaw,
+    decrypt,
+    isDecrypting,
+    canDecrypt,
+    decryptError,
+    refetch,
+    hasUSDTHandle,
+    hasETHHandle,
+  } = useBalances(address as `0x${string}` | undefined, !!address, chainId, fhevmInstance, ethersSigner as any);
+
+  useEffect(() => {
+    if (!decryptError) return;
+    setDecryptUiError(normalizeDecryptError(decryptError));
+  }, [decryptError]);
+
+  useEffect(() => {
+    if (!isDecrypting && revealTimeoutRef.current) {
+      window.clearTimeout(revealTimeoutRef.current);
+      revealTimeoutRef.current = null;
+    }
+  }, [isDecrypting]);
+
+  useEffect(() => {
+    return () => {
+      if (revealTimeoutRef.current) {
+        window.clearTimeout(revealTimeoutRef.current);
+        revealTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const revealBalances = async () => {
+    if (!address || isDecrypting) return;
+    setDecryptUiError(null);
+
+    let readyUSDT = hasUSDTHandle;
+    let readyETH = hasETHHandle;
+
+    if (!readyUSDT && !readyETH) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const refreshed = await refetch();
+        readyUSDT = readyUSDT || !!refreshed.usdtHandle;
+        readyETH = readyETH || !!refreshed.ethHandle;
+        if (readyUSDT || readyETH) break;
+        await new Promise(resolve => window.setTimeout(resolve, 1200));
+      }
+    }
+
+    if (!readyUSDT && !readyETH) {
+      setDecryptUiError("Encrypted balances are still syncing. Wait a few seconds, then reveal again.");
+      return;
+    }
+
+    if (!canDecrypt) {
+      setDecryptUiError("FHE wallet session is not ready yet. Reconnect wallet and try again.");
+      return;
+    }
+
+    decrypt();
+    revealTimeoutRef.current = window.setTimeout(() => {
+      setDecryptUiError("Decryption is taking longer than expected. Please retry reveal.");
+    }, 25000);
+  };
 
   useReadContract({
     address: CONTRACTS.pool,
@@ -120,17 +193,17 @@ export function PortfolioPage({
 
             <div style={{ marginTop: "16px" }}>
               <button
-                onClick={decrypt}
-                disabled={isDecrypting || !canDecrypt}
+                onClick={revealBalances}
+                disabled={isDecrypting || !address}
                 style={{
-                  background: canDecrypt ? "rgba(255,210,8,0.1)" : "rgba(255,255,245,0.04)",
-                  border: `1px solid ${canDecrypt ? "rgba(255,210,8,0.3)" : "rgba(255,255,245,0.08)"}`,
+                  background: address ? "rgba(255,210,8,0.1)" : "rgba(255,255,245,0.04)",
+                  border: `1px solid ${address ? "rgba(255,210,8,0.3)" : "rgba(255,255,245,0.08)"}`,
                   borderRadius: "10px",
                   padding: "9px 18px",
                   fontSize: "12px",
                   fontWeight: 700,
-                  color: canDecrypt ? "#FFD208" : "#3a3832",
-                  cursor: canDecrypt ? "pointer" : "not-allowed",
+                  color: address ? "#FFD208" : "#3a3832",
+                  cursor: address ? "pointer" : "not-allowed",
                   fontFamily: "'Cabinet Grotesk',sans-serif",
                   display: "flex",
                   alignItems: "center",
@@ -143,6 +216,11 @@ export function PortfolioPage({
                 </svg>
                 {isDecrypting ? "Decrypting…" : "Reveal Balances"}
               </button>
+              {decryptUiError && (
+                <div style={{ marginTop: "10px", color: "#ff6060", fontSize: "11px", lineHeight: 1.4 }}>
+                  {decryptUiError}
+                </div>
+              )}
             </div>
           </div>
 
