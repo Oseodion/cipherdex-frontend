@@ -269,11 +269,9 @@ export function SwapPage() {
       const refreshed = await refetchRef.current();
       if (!usdtSynced && refreshed.usdtHandle && refreshed.usdtHandle !== previous.usdt) {
         usdtSynced = true;
-        preSwapHandlesRef.current.usdt = refreshed.usdtHandle;
       }
       if (!ethSynced && refreshed.ethHandle && refreshed.ethHandle !== previous.eth) {
         ethSynced = true;
-        preSwapHandlesRef.current.eth = refreshed.ethHandle;
       }
       setBalanceSyncing({ 1: !usdtSynced, 2: !ethSynced });
       if (usdtSynced && ethSynced) return;
@@ -281,31 +279,6 @@ export function SwapPage() {
     }
     setBalanceSyncing({ 1: false, 2: false });
   }, []);
-
-  const ensureFreshHandleForToken = useCallback(
-    async (token: 1 | 2) => {
-      const previousHandle = token === 1 ? preSwapHandlesRef.current.usdt : preSwapHandlesRef.current.eth;
-      const maxAttempts = 6;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const refreshed = await refetchRef.current();
-        const ready = token === 1 ? refreshed.usdtReady : refreshed.ethReady;
-        const currentHandle = token === 1 ? refreshed.usdtHandle : refreshed.ethHandle;
-        if (ready && currentHandle) {
-          const changed = !previousHandle || currentHandle !== previousHandle;
-          if (changed) {
-            if (token === 1) preSwapHandlesRef.current.usdt = currentHandle;
-            else preSwapHandlesRef.current.eth = currentHandle;
-            return { ready: true, changed: true };
-          }
-        }
-        await new Promise(resolve => window.setTimeout(resolve, 1000));
-      }
-
-      const fallbackReady = token === 1 ? hasUSDTHandle : hasETHHandle;
-      return { ready: fallbackReady, changed: false };
-    },
-    [hasUSDTHandle, hasETHHandle],
-  );
 
   // Hard fallback: always finalize post-swap UI exactly once per tx hash.
   useEffect(() => {
@@ -515,15 +488,6 @@ export function SwapPage() {
       return;
     }
 
-    const freshness = await ensureFreshHandleForToken(n);
-    if (!freshness.ready) {
-      setDecryptUiError("Encrypted balance is still syncing after swap. Please try again in a few seconds.");
-      return;
-    }
-    if (!freshness.changed) {
-      setDecryptUiError("Balance update is still syncing on Sepolia. Please retry reveal in a few seconds.");
-      return;
-    }
     setRevealing(prev => ({ ...prev, [n]: true }));
     setDisplayBals(prev => ({ ...prev, [n]: "▓▓▓▓▓▓▓▓" }));
     setDecryptRequest(n);
@@ -1456,6 +1420,9 @@ export function SwapPage() {
                     >
                       <span style={{ fontSize: "13px", color: "#6b6860" }}>{label}</span>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        {balanceSyncing[n] && (
+                          <span style={{ fontSize: "10px", color: "#8f8570", fontWeight: 700 }}>Syncing…</span>
+                        )}
                         <span
                           style={{
                             fontSize: "15px",
@@ -2728,7 +2695,13 @@ export function SwapPage() {
                     >
                       <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Your Balances</h4>
                       <span style={{ fontSize: "10px", color: "#3a3832" }}>
-                        {isMobileReadOnly ? "Desktop required" : canRevealBalances ? "Tap to decrypt" : "Loading stats…"}
+                        {isMobileReadOnly
+                          ? "Desktop required"
+                          : balanceSyncing[1] || balanceSyncing[2]
+                            ? "Balances syncing…"
+                            : canRevealBalances
+                              ? "Tap to decrypt"
+                              : "Loading stats…"}
                       </span>
                     </div>
                     {[
@@ -2753,6 +2726,11 @@ export function SwapPage() {
                           </div>
                         </div>
                         <div style={{ textAlign: "right" }}>
+                          {balanceSyncing[token.n] && (
+                            <div style={{ fontSize: "10px", color: "#8f8570", fontWeight: 700, marginBottom: "2px" }}>
+                              Syncing…
+                            </div>
+                          )}
                           <div
                             style={{
                               fontSize: "13px",
