@@ -8,6 +8,7 @@ import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_BLOCKS = 60000n;
+const QUICK_LOOKBACK_BLOCKS = 8000n;
 
 const formatAge = (timestampSeconds: number) => {
   const delta = Math.max(0, Math.floor(Date.now() / 1000) - timestampSeconds);
@@ -131,18 +132,38 @@ export function usePoolStats() {
     try {
       const latestBlock = await publicClient.getBlockNumber();
       const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
-      const logs = await fetchEventLogsChunked({
+      const quickFrom = latestBlock > QUICK_LOOKBACK_BLOCKS ? latestBlock - QUICK_LOOKBACK_BLOCKS : 0n;
+
+      const quickLogs = await fetchEventLogsChunked({
         publicClient,
         address: CONTRACTS.pool,
         abi: PoolABI.abi,
         eventName: "Swap",
-        fromBlock,
+        fromBlock: quickFrom,
         toBlock: latestBlock,
       });
       if (requestId !== loadRequestRef.current) return;
-      applySwapLogs(logs);
+      applySwapLogs(quickLogs);
       setRefreshing(false);
       if (foreground) setLoading(false);
+
+      if (quickFrom > fromBlock) {
+        void fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock,
+          toBlock: latestBlock,
+        })
+          .then(fullLogs => {
+            if (requestId !== loadRequestRef.current) return;
+            applySwapLogs(fullLogs);
+          })
+          .catch(() => {
+            // keep quick results if backfill fails
+          });
+      }
     } catch (err: any) {
       if (requestId !== loadRequestRef.current) return;
       setError(err?.message ?? "Unable to load pool activity");

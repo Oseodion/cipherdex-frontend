@@ -179,8 +179,25 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
   }, [load]);
 
   useEffect(() => {
-    const onSwapConfirmed = () => {
-      load();
+    const onSwapConfirmed = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ txHash?: string; aToB?: boolean; trader?: string; timestamp?: number }>).detail;
+      if (detail?.txHash && typeof detail?.aToB === "boolean" && detail?.trader) {
+        const optimistic: PoolActivityEvent = {
+          kind: "swap",
+          actor: detail.trader,
+          aToB: detail.aToB,
+          timestamp: detail.timestamp ?? Math.floor(Date.now() / 1000),
+          txHash: detail.txHash,
+          blockNumber: 0n,
+          logIndex: -1,
+        };
+        setEvents(prev => {
+          const deduped = prev.filter(item => !(item.txHash === optimistic.txHash && item.kind === "swap"));
+          return [optimistic, ...deduped].sort((a, b) => b.timestamp - a.timestamp);
+        });
+      }
+      // Let indexers catch up, then reconcile against chain logs.
+      window.setTimeout(() => load(), 1200);
     };
     window.addEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
     window.addEventListener("cipherdex:liquidity-changed", onSwapConfirmed);

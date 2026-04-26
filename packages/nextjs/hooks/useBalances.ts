@@ -35,8 +35,7 @@ export function useBalances(
     },
   });
   const cUSDTHandleRaw = cUSDTRawHandle as `0x${string}` | undefined;
-  const cUSDTHandle =
-    latestHandlesRef.current.usdt ?? (isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined);
+  const cUSDTHandle = isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : latestHandlesRef.current.usdt;
 
   const { data: cETHRawHandle, refetch: refetchETH } = useReadContract({
     address: CONTRACTS.cETH,
@@ -50,8 +49,7 @@ export function useBalances(
     },
   });
   const cETHHandleRaw = cETHRawHandle as `0x${string}` | undefined;
-  const cETHHandle =
-    latestHandlesRef.current.eth ?? (isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined);
+  const cETHHandle = isValidHandle(cETHHandleRaw) ? cETHHandleRaw : latestHandlesRef.current.eth;
 
   const requests = useMemo(() => {
     if (!cUSDTHandle && !cETHHandle) return undefined;
@@ -129,6 +127,16 @@ export function useBalances(
       ethHandle: nextETH,
     };
   }, [refetchUSDT, refetchETH]);
+
+  useEffect(() => {
+    const nextUSDT = isValidHandle(cUSDTHandleRaw) ? cUSDTHandleRaw : undefined;
+    const nextETH = isValidHandle(cETHHandleRaw) ? cETHHandleRaw : undefined;
+    if (!nextUSDT && !nextETH) return;
+    latestHandlesRef.current = {
+      usdt: nextUSDT ?? latestHandlesRef.current.usdt,
+      eth: nextETH ?? latestHandlesRef.current.eth,
+    };
+  }, [cUSDTHandleRaw, cETHHandleRaw]);
 
   useEffect(() => {
     if (!isConnected || !address) {
