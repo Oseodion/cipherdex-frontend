@@ -13,6 +13,21 @@ import { useWagmiEthers } from "~~/hooks/wagmi/useWagmiEthers";
 
 const ADD_GAS = 10_000_000n;
 const REMOVE_GAS = 10_000_000n;
+const RELAYER_RETRY_DELAYS_MS = [800, 1500];
+
+const isTransientRelayerError = (err: unknown) => {
+  const raw = typeof err === "string" ? err : (err as any)?.message ?? "";
+  const msg = String(raw).toLowerCase();
+  return (
+    msg.includes("input_proof") ||
+    msg.includes("input-proof") ||
+    msg.includes("relayer") ||
+    msg.includes("fetch post failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("err_ssl_bad_record_mac_alert")
+  );
+};
 
 /** One-line context under the stat grid (not repeated inside each card). */
 const POOL_STATS_SUMMARY = "Public on-chain fields only - rough signals, not decrypted TVL";
@@ -80,6 +95,23 @@ export function LiquidityPoolsPage({
     contractAddress: CONTRACTS.pool,
   });
 
+  const encryptWithRetry = async (build: (builder: any) => void, label: string) => {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= RELAYER_RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        return await encryptWith(build);
+      } catch (err) {
+        lastErr = err;
+        if (!isTransientRelayerError(err) || attempt === RELAYER_RETRY_DELAYS_MS.length) {
+          throw err;
+        }
+        setStatus(`Retrying ${label} proof…`);
+        await new Promise(resolve => window.setTimeout(resolve, RELAYER_RETRY_DELAYS_MS[attempt]));
+      }
+    }
+    throw lastErr ?? new Error(`${label} encryption failed`);
+  };
+
   // User's LP share is FHE-encrypted; we just show "Encrypted" in the UI
   useReadContract({
     address: CONTRACTS.pool,
@@ -138,7 +170,7 @@ export function LiquidityPoolsPage({
       // relayer fetch inside encrypt() to fail with a COEP/SSL error.
       setStatus("Encrypting amounts…");
       // Stage encryptions so the browser can paint between heavy FHE steps.
-      const encA = await encryptWith(b => b.add64(rawA));
+      const encA = await encryptWithRetry(b => b.add64(rawA), "cUSDT");
       await new Promise<void>(resolve => {
         if (typeof window === "undefined") {
           resolve();
@@ -146,7 +178,7 @@ export function LiquidityPoolsPage({
         }
         window.requestAnimationFrame(() => resolve());
       });
-      const encB = await encryptWith(b => b.add64(rawB));
+      const encB = await encryptWithRetry(b => b.add64(rawB), "cETH");
       if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       if (!encA || !encB) throw new Error("Encryption failed");
 
@@ -250,7 +282,7 @@ export function LiquidityPoolsPage({
             }, 12000)
           : null;
       setStatus("Encrypting share amount…");
-      const encShares = await encryptWith(b => b.add64(sharesToRemove));
+      const encShares = await encryptWithRetry(b => b.add64(sharesToRemove), "share");
       if (slowEncryptTimer) window.clearTimeout(slowEncryptTimer);
       if (!encShares) throw new Error("Encryption failed");
 
