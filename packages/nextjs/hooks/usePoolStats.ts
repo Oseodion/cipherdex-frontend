@@ -219,17 +219,6 @@ export function usePoolStats() {
       }
 
       setRecentTrades(prev => [recent, ...prev.filter(item => item !== recent && !item.includes(txHashLabel))].slice(0, 3));
-      setTotalTrades(prev => prev + 1);
-      setHeatmapCounts(prev => {
-        const next = [...prev];
-        next[next.length - 1] = (next[next.length - 1] ?? 0) + 1;
-        return next;
-      });
-
-      if (detail?.trader) {
-        const trader = detail.trader.toLowerCase();
-        setActiveTraders(prev => (swapRecords.some(r => r.trader.toLowerCase() === trader) ? prev : prev + 1));
-      }
       // Delay reconciliation slightly so RPC indexers have time to surface the new event.
       window.setTimeout(() => {
         loadPoolMetrics();
@@ -237,7 +226,7 @@ export function usePoolStats() {
     };
     window.addEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
     return () => window.removeEventListener("cipherdex:swap-confirmed", onSwapConfirmed);
-  }, [loadPoolMetrics, swapRecords]);
+  }, [loadPoolMetrics]);
 
   return {
     activeTraders,

@@ -434,10 +434,19 @@ export function SwapPage() {
 
   // --- Mobile detection ---
   useLayoutEffect(() => {
-    const isMobileByUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent,
-    );
-    setIsMobile(isMobileByUserAgent);
+    const detectMobile = () => {
+      const isMobileByUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent,
+      );
+      // Fallback for mobile browsers with "desktop site" enabled:
+      // treat coarse-pointer narrow screens as mobile layout.
+      const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+      const isMobileByDeviceShape = isCoarsePointer && window.innerWidth <= 1024;
+      setIsMobile(isMobileByUserAgent || isMobileByDeviceShape);
+    };
+    detectMobile();
+    window.addEventListener("resize", detectMobile);
+    return () => window.removeEventListener("resize", detectMobile);
   }, []);
 
   useEffect(() => {
