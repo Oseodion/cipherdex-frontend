@@ -3003,11 +3003,12 @@ export function SwapPage() {
                           const tradeCount = heatmapCounts[i];
                           const daysAgo = 27 - i;
                           const date = new Date();
-                          date.setDate(date.getDate() - daysAgo);
+                          date.setUTCDate(date.getUTCDate() - daysAgo);
                           const label = date.toLocaleDateString("en", {
                             weekday: "short",
                             month: "short",
                             day: "numeric",
+                            timeZone: "UTC",
                           });
                           return (
                             <div

@@ -20,6 +20,10 @@ const formatAge = (timestampSeconds: number) => {
 
 const formatTrader = (trader: string) => `${trader.slice(0, 6)}...${trader.slice(-4)}`;
 const formatTxHash = (txHash: string) => `${txHash.slice(0, 6)}...${txHash.slice(-4)}`;
+const startOfUtcDayMs = (timestampMs: number) => {
+  const d = new Date(timestampMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+};
 
 export type SwapRecord = {
   trader: string;
@@ -74,9 +78,7 @@ export function usePoolStats() {
 
       const dayBuckets = Array(28).fill(0);
       const uniqueTraders = new Set<string>();
-      const now = Date.now();
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
+      const todayUtc = startOfUtcDayMs(Date.now());
 
       const swapsFromChain: SwapRecord[] = uniqueLogs
         .map((log: any) => ({
@@ -106,9 +108,8 @@ export function usePoolStats() {
       const swaps = merged.sort((a, b) => b.timestamp - a.timestamp);
 
       swaps.forEach(item => {
-        const eventDate = new Date(item.timestamp * 1000);
-        eventDate.setHours(0, 0, 0, 0);
-        const daysAgo = Math.floor((today.getTime() - eventDate.getTime()) / DAY_MS);
+        const eventUtc = startOfUtcDayMs(item.timestamp * 1000);
+        const daysAgo = Math.floor((todayUtc - eventUtc) / DAY_MS);
         const bucketIdx = 27 - daysAgo;
         if (daysAgo >= 0 && daysAgo < 28) {
           dayBuckets[bucketIdx] += 1;

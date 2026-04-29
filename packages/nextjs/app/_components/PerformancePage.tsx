@@ -5,8 +5,8 @@ import { usePoolStats } from "~~/hooks/usePoolStats";
 
 const DAY_LABELS = Array.from({ length: 28 }, (_, i) => {
   const d = new Date();
-  d.setDate(d.getDate() - (27 - i));
-  return d.toLocaleDateString("en", { month: "short", day: "numeric" });
+  d.setUTCDate(d.getUTCDate() - (27 - i));
+  return d.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
 });
 
 function txHashToHeight(hash: string, bar: number): number {
