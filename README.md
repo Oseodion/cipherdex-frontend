@@ -84,6 +84,11 @@ Optional:
 4. Verify update in Recent Trades and Transactions
 5. Open Performance/Audit views to verify stats rendering
 
+## Platform support
+
+- Desktop browsers: full functionality (connect wallet, reveal balances, swap, faucet, add/remove liquidity).
+- Mobile browsers: browse-only mode. Dashboard, transactions, performance, and audit views remain visible, while wallet action flows are desktop-only.
+
 ## Operational notes
 
 - CipherDEX includes RPC fallback handling for smoother Sepolia demos.

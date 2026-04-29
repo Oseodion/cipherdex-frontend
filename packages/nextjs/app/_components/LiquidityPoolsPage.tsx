@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { toHex, useFHEEncryption } from "@fhevm-sdk";
 import type { FhevmInstance } from "@fhevm-sdk";
+import { flushSync } from "react-dom";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 import TokenABI from "~~/contracts/ConfidentialToken.json";
@@ -16,7 +16,7 @@ const REMOVE_GAS = 10_000_000n;
 const RELAYER_RETRY_DELAYS_MS = [800, 1500];
 
 const isTransientRelayerError = (err: unknown) => {
-  const raw = typeof err === "string" ? err : (err as any)?.message ?? "";
+  const raw = typeof err === "string" ? err : ((err as any)?.message ?? "");
   const msg = String(raw).toLowerCase();
   return (
     msg.includes("input_proof") ||
@@ -48,7 +48,7 @@ export function LiquidityPoolsPage({
   isMobile?: boolean;
   onSuccess?: () => void;
 }) {
-  const mobileRestrictionMessage = "Desktop required for liquidity actions.";
+  const mobileRestrictionMessage = "Desktop required";
   const { address, isConnected } = useAccount();
   const { ethersSigner, ethersProvider } = useWagmiEthers();
   const { writeContractAsync } = useWriteContract();
@@ -340,13 +340,15 @@ export function LiquidityPoolsPage({
         id: 0,
         label: "Reserve cUSDT",
         value: snapshotADisplay,
-        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
+        disclosure:
+          "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
       },
       {
         id: 1,
         label: "Reserve cETH",
         value: snapshotBDisplay,
-        disclosure: "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
+        disclosure:
+          "On-chain snapshot divisor used for pool math - not full TVL; updates on pool init and liquidity changes.",
       },
       {
         id: 2,
@@ -730,7 +732,8 @@ export function LiquidityPoolsPage({
               onClick={handleAdd}
               disabled={!!isMobile || isLoading || !isConnected || !canEncrypt || !poolInitialized}
               style={{
-                background: !!isMobile || isLoading || !isConnected || !poolInitialized ? "rgba(255,210,8,0.3)" : "#FFD208",
+                background:
+                  !!isMobile || isLoading || !isConnected || !poolInitialized ? "rgba(255,210,8,0.3)" : "#FFD208",
                 border: "none",
                 borderRadius: "12px",
                 padding: "14px",

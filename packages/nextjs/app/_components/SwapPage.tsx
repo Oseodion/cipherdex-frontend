@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { AuditViewPage } from "./AuditViewPage";
 import { LiquidityPoolsPage } from "./LiquidityPoolsPage";
 import { PerformancePage } from "./PerformancePage";
@@ -9,6 +8,7 @@ import { PortfolioPage } from "./PortfolioPage";
 import { SettingsPage } from "./SettingsPage";
 import { TransactionsPage } from "./TransactionsPage";
 import { useFhevm } from "@fhevm-sdk";
+import { flushSync } from "react-dom";
 import { useConnectorClient } from "wagmi";
 import { RainbowKitCustomConnectButton } from "~~/components/helper/RainbowKitCustomConnectButton";
 import { useBalances } from "~~/hooks/useBalances";
@@ -31,8 +31,9 @@ const normalizeDecryptError = (raw: string | null | undefined) => {
 };
 
 export function SwapPage() {
-  const mobileRestrictionMessage = "Desktop required for wallet actions.";
+  const mobileRestrictionMessage = "Desktop required";
   const [activeNav, setActiveNav] = useState("Dashboard");
+  const [visitedNavs, setVisitedNavs] = useState<Set<string>>(new Set(["Dashboard"]));
   const [revealed, setRevealed] = useState<{ [k: number]: boolean }>({});
   const [revealing, setRevealing] = useState<{ [k: number]: boolean }>({});
   const [displayBals, setDisplayBals] = useState<{ [k: number]: string }>({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
@@ -43,7 +44,6 @@ export function SwapPage() {
   const [slippage, setSlippage] = useState("0.5");
   const [showSlippage, setShowSlippage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [mobileDesktopHintDismissed, setMobileDesktopHintDismissed] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [decryptUiError, setDecryptUiError] = useState<string | null>(null);
   const [balanceSyncing, setBalanceSyncing] = useState<{ [k: number]: boolean }>({ 1: false, 2: false });
@@ -75,7 +75,11 @@ export function SwapPage() {
     return undefined;
   }, [connectorClient]);
 
-  const { instance: fhevmInstance, status: fhevmStatus, error: fhevmError } = useFhevm({
+  const {
+    instance: fhevmInstance,
+    status: fhevmStatus,
+    error: fhevmError,
+  } = useFhevm({
     provider,
     chainId,
     enabled: true,
@@ -133,6 +137,7 @@ export function SwapPage() {
   } = usePoolStats();
   const canRevealBalances = !statsLoading;
   const isMobileReadOnly = isMobile;
+  const isFheReady = fhevmStatus === "ready";
   const { poolInitialized, snapshotA, snapshotB, rateUSDTperETH, refetch: poolInitRefetch } = usePoolInit();
 
   // --- Balance reveal animation ---
@@ -413,7 +418,7 @@ export function SwapPage() {
   const payToken = isAToB ? { name: "cUSDT", icon: <CUSDTIcon /> } : { name: "cETH", icon: <CETHIcon /> };
   const receiveToken = isAToB ? { name: "cETH", icon: <CETHIcon /> } : { name: "cUSDT", icon: <CUSDTIcon /> };
   const payTokenIndex = isAToB ? 1 : 2;
-  const inputDecimals = isAToB ? 6 : 9;  // cUSDT=6 decimals, cETH=9 decimals
+  const inputDecimals = isAToB ? 6 : 9; // cUSDT=6 decimals, cETH=9 decimals
   const outputDecimals = isAToB ? 9 : 6;
   const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const heatmap = useMemo(() => {
@@ -427,12 +432,12 @@ export function SwapPage() {
     }));
   }, [heatmapCounts]);
 
-  // --- Mobile detection (layout effect so width is correct before first paint; no sessionStorage on dismiss so refresh shows the hint again) ---
+  // --- Mobile detection ---
   useLayoutEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
+    const isMobileByUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent,
+    );
+    setIsMobile(isMobileByUserAgent);
   }, []);
 
   useEffect(() => {
@@ -451,6 +456,17 @@ export function SwapPage() {
     }
     setFheUnsupportedReason(null);
   }, [isMobile]);
+
+  // Keep a page mounted after first visit so revisits stay fast,
+  // without triggering heavy background warmups for all pages at startup.
+  useEffect(() => {
+    setVisitedNavs(prev => {
+      if (prev.has(activeNav)) return prev;
+      const next = new Set(prev);
+      next.add(activeNav);
+      return next;
+    });
+  }, [activeNav]);
 
   // --- Hide balances immediately on wallet disconnect ---
   useEffect(() => {
@@ -541,9 +557,15 @@ export function SwapPage() {
       setRevealed({});
       setPendingReveal(null);
       setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
-    if (isRealSwapping || !canSwap || !isConnected) { setIsSubmitting(false); return; }
-    const amountValue = parseFloat(amountIn);
-    if (!Number.isFinite(amountValue) || amountValue <= 0) { setIsSubmitting(false); return; }
+      if (isRealSwapping || !canSwap || !isConnected) {
+        setIsSubmitting(false);
+        return;
+      }
+      const amountValue = parseFloat(amountIn);
+      if (!Number.isFinite(amountValue) || amountValue <= 0) {
+        setIsSubmitting(false);
+        return;
+      }
       resetSwap();
       setAmountOut(null);
       const amountInBig = BigInt(Math.floor(amountValue * 10 ** inputDecimals));
@@ -1141,14 +1163,31 @@ export function SwapPage() {
                 >
                   Wallet tips
                 </button>
-                <RainbowKitCustomConnectButton />
+                {isMobile ? (
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "#FFD208",
+                      border: "1px solid rgba(255,210,8,0.28)",
+                      background: "rgba(255,210,8,0.08)",
+                      borderRadius: "999px",
+                      padding: "5px 10px",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    Connect wallet on desktop
+                  </span>
+                ) : (
+                  <RainbowKitCustomConnectButton />
+                )}
               </div>
             </>
           )}
         </header>
 
         <main style={{ padding: isMobile ? "70px 14px 80px" : "80px 24px 24px", flex: 1 }}>
-          {isMobile && !mobileDesktopHintDismissed && (
+          {isMobile && (
             <div
               role="status"
               style={{
@@ -1180,1403 +1219,326 @@ export function SwapPage() {
                   <path d="M12 17v4" />
                 </svg>
                 <div>
-                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#f0ede6", marginBottom: "4px" }}>
-                    Best on desktop
-                  </div>
                   <div style={{ fontSize: "12px", color: "#8a8680", lineHeight: 1.45 }}>
-                    Mobile is view-only. Connect wallet, reveal balances, swap, faucet, and liquidity actions are
-                    desktop-only for reliability.
+                    FHE features require a desktop browser. You can browse the app here.
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setMobileDesktopHintDismissed(true)}
-                style={{
-                  flexShrink: 0,
-                  background: "rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,245,0.12)",
-                  borderRadius: "8px",
-                  color: "#f0ede6",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  fontFamily: "'Cabinet Grotesk',sans-serif",
-                }}
-              >
-                Got it
-              </button>
             </div>
           )}
-          <div key={activeNav} style={{ animation: "pageSwitchIn 220ms ease-out" }}>
-          {/* Routed sub-pages */}
-          {activeNav === "Transactions" && <TransactionsPage address={address} isMobile={isMobile} />}
-          {activeNav === "Liquidity Pools" && (
-            <LiquidityPoolsPage
-              fhevmInstance={fhevmInstance}
-              isMobile={isMobile}
-              onSuccess={() => {
-                setRevealed({});
-                setRevealing({});
-                runningReveal.current = {};
-                setPendingReveal(null);
-                setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
-                setTimeout(() => refetch(), 3000);
-              }}
-            />
+          <div style={{ animation: "pageSwitchIn 220ms ease-out" }}>
+            {/* Routed sub-pages */}
+          {(activeNav === "Transactions" || visitedNavs.has("Transactions")) && (
+            <div style={{ display: activeNav === "Transactions" ? "block" : "none" }}>
+              <TransactionsPage address={address} isMobile={isMobile} />
+            </div>
           )}
-          {activeNav === "Portfolio" && (
-            <PortfolioPage address={address} chainId={chainId} fhevmInstance={fhevmInstance} isMobile={isMobile} />
+          {(activeNav === "Liquidity Pools" || visitedNavs.has("Liquidity Pools")) && (
+            <div style={{ display: activeNav === "Liquidity Pools" ? "block" : "none" }}>
+              <LiquidityPoolsPage
+                fhevmInstance={fhevmInstance}
+                isMobile={isMobile}
+                onSuccess={() => {
+                  setRevealed({});
+                  setRevealing({});
+                  runningReveal.current = {};
+                  setPendingReveal(null);
+                  setDisplayBals({ 1: "▓▓▓▓▓▓▓▓", 2: "▓▓▓▓▓▓▓▓" });
+                  setTimeout(() => refetch(), 3000);
+                }}
+              />
+            </div>
           )}
-          {activeNav === "Performance" && <PerformancePage isMobile={isMobile} />}
-          {activeNav === "Audit View" && <AuditViewPage address={address} isMobile={isMobile} />}
-          {activeNav === "Settings" && <SettingsPage isMobile={isMobile} />}
+          {(activeNav === "Portfolio" || visitedNavs.has("Portfolio")) && (
+            <div style={{ display: activeNav === "Portfolio" ? "block" : "none" }}>
+              <PortfolioPage address={address} chainId={chainId} fhevmInstance={fhevmInstance} isMobile={isMobile} />
+            </div>
+          )}
+          {(activeNav === "Performance" || visitedNavs.has("Performance")) && (
+            <div style={{ display: activeNav === "Performance" ? "block" : "none" }}>
+              <PerformancePage isMobile={isMobile} />
+            </div>
+          )}
+          {(activeNav === "Audit View" || visitedNavs.has("Audit View")) && (
+            <div style={{ display: activeNav === "Audit View" ? "block" : "none" }}>
+              <AuditViewPage address={address} isMobile={isMobile} />
+            </div>
+          )}
+          {(activeNav === "Settings" || visitedNavs.has("Settings")) && (
+            <div style={{ display: activeNav === "Settings" ? "block" : "none" }}>
+              <SettingsPage isMobile={isMobile} />
+            </div>
+          )}
 
-          {/* Dashboard */}
-          {activeNav === "Dashboard" && (
-            <>
-              <div style={{ marginBottom: "22px" }}>
-                <h1 style={{ fontSize: isMobile ? "22px" : "26px", fontWeight: 900, letterSpacing: "-0.04em" }}>
-                  Cipher<span style={{ color: "#FFD208" }}>DEX</span> Overview
-                </h1>
-                <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
-                  Live pool analytics and your encrypted portfolio
-                </p>
-                {statsLoading && (
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      marginTop: "8px",
-                      padding: "4px 10px",
-                      borderRadius: "999px",
-                      border: "1px solid rgba(255,210,8,0.24)",
-                      background: "rgba(255,210,8,0.08)",
-                      color: "#FFD208",
-                      fontSize: "10px",
-                      fontFamily: "monospace",
-                      fontWeight: 700,
-                    }}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-                      <circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1.5" />
-                      <path d="M5 1a4 4 0 0 1 4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                        <animateTransform
-                          attributeName="transform"
-                          type="rotate"
-                          from="0 5 5"
-                          to="360 5 5"
-                          dur="0.9s"
-                          repeatCount="indefinite"
-                        />
-                      </path>
-                    </svg>
-                    Loading stats…
-                  </div>
-                )}
-              </div>
-
-              {/* Pool not live notice - disappears once deployer runs initializePool.ts */}
-              {poolInitialized === false && (
-                <div
-                  style={{
-                    background: "rgba(255,255,245,0.03)",
-                    border: "1px solid rgba(255,255,245,0.08)",
-                    borderRadius: "12px",
-                    padding: "14px 18px",
-                    marginBottom: "18px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                  }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="#6b6860"
-                    strokeWidth="1.5"
-                    style={{ flexShrink: 0 }}
-                  >
-                    <circle cx="8" cy="8" r="7" />
-                    <path d="M8 5v3.5M8 11v.5" />
-                  </svg>
-                  <div style={{ fontSize: "13px", color: "#6b6860" }}>
-                    Pool not yet live - initial liquidity is being seeded. Check back shortly.
-                  </div>
-                </div>
-              )}
-
-              {/* Stats: 4 cards */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
-                  gap: "10px",
-                  marginBottom: "20px",
-                }}
-              >
-                {[
-                  { label: "Total Trades", value: totalTrades.toString(), sub: "All time" },
-                  {
-                    label: "Active Traders",
-                    value: activeTraders.toString(),
-                    sub: "Unique wallets",
-                  },
-                  {
-                    label: "Reserve cUSDT",
-                    value: snapshotA
-                      ? (Number(snapshotA) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 0 })
-                      : "▓▓▓▓",
-                    sub: "Snapshot",
-                    enc: !snapshotA,
-                  },
-                  {
-                    label: "Reserve cETH",
-                    value: snapshotB
-                      ? (Number(snapshotB) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 4 })
-                      : "▓▓▓▓",
-                    sub: "Snapshot",
-                    enc: !snapshotB,
-                  },
-                ].map((s: any) => (
-                  <div
-                    key={s.label}
-                    style={{
-                      background: "#171714",
-                      borderRadius: "12px",
-                      padding: "14px 16px",
-                      border: "1px solid rgba(255,255,245,0.05)",
-                    }}
-                  >
+            {/* Dashboard */}
+            {activeNav === "Dashboard" && (
+              <>
+                <div style={{ marginBottom: "22px" }}>
+                  <h1 style={{ fontSize: isMobile ? "22px" : "26px", fontWeight: 900, letterSpacing: "-0.04em" }}>
+                    Cipher<span style={{ color: "#FFD208" }}>DEX</span> Overview
+                  </h1>
+                  <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
+                    Live pool analytics and your encrypted portfolio
+                  </p>
+                  {statsLoading && (
                     <div
                       style={{
-                        fontSize: "9px",
-                        color: "#3a3832",
-                        fontWeight: 700,
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        fontFamily: "monospace",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      {s.label}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "20px",
-                        fontWeight: 700,
-                        fontFamily: "monospace",
-                        color: s.enc ? "rgba(240,237,230,0.22)" : "#f0ede6",
-                        letterSpacing: s.enc ? "2px" : undefined,
-                      }}
-                    >
-                      {s.value}
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>{s.sub}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* 2-column: balances + recent trades */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-                  gap: "18px",
-                  marginBottom: "18px",
-                }}
-              >
-                {/* Balances card */}
-                <div style={{ ...card, display: "flex", flexDirection: "column" }}>
-                  <div style={cardShine} />
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      color: "#3a3832",
-                      fontWeight: 700,
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      fontFamily: "monospace",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    Your Balances
-                  </div>
-                  {(
-                    [
-                      { n: 1, label: "cUSDT", accent: true },
-                      { n: 2, label: "cETH", accent: false },
-                    ] as const
-                  ).map(({ n, label, accent }) => (
-                    <div
-                      key={n}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
+                        display: "inline-flex",
                         alignItems: "center",
-                        padding: "12px 0",
-                        borderBottom: n === 1 ? "1px solid rgba(255,255,245,0.05)" : "none",
+                        gap: "6px",
+                        marginTop: "8px",
+                        padding: "4px 10px",
+                        borderRadius: "999px",
+                        border: "1px solid rgba(255,210,8,0.24)",
+                        background: "rgba(255,210,8,0.08)",
+                        color: "#FFD208",
+                        fontSize: "10px",
+                        fontFamily: "monospace",
+                        fontWeight: 700,
                       }}
                     >
-                      <span style={{ fontSize: "13px", color: "#6b6860" }}>{label}</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        {balanceSyncing[n] && (
-                          <span style={{ fontSize: "10px", color: "#8f8570", fontWeight: 700 }}>Syncing…</span>
-                        )}
-                        <span
-                          style={{
-                            fontSize: "15px",
-                            fontWeight: 700,
-                            fontFamily: "monospace",
-                            color: accent ? "#FFD208" : "#f0ede6",
-                          }}
+                      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                        <circle
+                          cx="5"
+                          cy="5"
+                          r="4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeOpacity="0.35"
+                          strokeWidth="1.5"
+                        />
+                        <path
+                          d="M5 1a4 4 0 0 1 4 4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
                         >
-                          {displayBals[n]}
-                        </span>
-                        <button
-                          onClick={() => revealBalance(n)}
-                          disabled={isMobileReadOnly || !canRevealBalances || revealing[n] || balanceSyncing[n]}
-                          style={{
-                            background: "transparent",
-                            border: "1px solid rgba(255,255,245,0.08)",
-                            borderRadius: "6px",
-                            padding: "3px 8px",
-                            fontSize: "10px",
-                            color: !canRevealBalances ? "#3a3832" : "#6b6860",
-                            cursor:
-                              isMobileReadOnly || !canRevealBalances || revealing[n] || balanceSyncing[n]
-                                ? "not-allowed"
-                                : "pointer",
-                            fontFamily: "'Cabinet Grotesk',sans-serif",
-                          }}
-                        >
-                          {balanceSyncing[n] ? "Syncing…" : revealed[n] ? "Hide" : revealing[n] ? "…" : "Reveal"}
-                        </button>
-                      </div>
+                          <animateTransform
+                            attributeName="transform"
+                            type="rotate"
+                            from="0 5 5"
+                            to="360 5 5"
+                            dur="0.9s"
+                            repeatCount="indefinite"
+                          />
+                        </path>
+                      </svg>
+                      Loading stats…
                     </div>
-                  ))}
-                  <button
-                    onClick={() => setActiveNav("Swap")}
-                    style={{
-                      marginTop: "12px",
-                      width: "100%",
-                      background: "#FFD208",
-                      border: "none",
-                      borderRadius: "10px",
-                      padding: "10px",
-                      fontSize: "13px",
-                      fontWeight: 800,
-                      color: "#000",
-                      cursor: "pointer",
-                      fontFamily: "'Cabinet Grotesk',sans-serif",
-                    }}
-                  >
-                    Swap Now →
-                  </button>
+                  )}
                 </div>
 
-                {/* Recent trades (real on-chain data) */}
-                <div style={card}>
-                  <div style={cardShine} />
+                {/* Pool not live notice - disappears once deployer runs initializePool.ts */}
+                {poolInitialized === false && (
                   <div
                     style={{
+                      background: "rgba(255,255,245,0.03)",
+                      border: "1px solid rgba(255,255,245,0.08)",
+                      borderRadius: "12px",
+                      padding: "14px 18px",
+                      marginBottom: "18px",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "12px",
+                      gap: "12px",
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color: "#3a3832",
-                        fontWeight: 700,
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        fontFamily: "monospace",
-                      }}
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="#6b6860"
+                      strokeWidth="1.5"
+                      style={{ flexShrink: 0 }}
                     >
-                      Recent Trades
+                      <circle cx="8" cy="8" r="7" />
+                      <path d="M8 5v3.5M8 11v.5" />
+                    </svg>
+                    <div style={{ fontSize: "13px", color: "#6b6860" }}>
+                      Pool not yet live - initial liquidity is being seeded. Check back shortly.
                     </div>
-                    <span style={{ fontSize: "10px", color: "#3a3832" }}>Amounts encrypted</span>
                   </div>
-                  {statsLoading && recentTrades.length === 0 && (
-                    <div style={{ fontSize: "12px", color: "#3a3832", fontFamily: "monospace" }}>Loading…</div>
-                  )}
-                  {!statsLoading && recentTrades.length === 0 && (
-                    <div style={{ fontSize: "12px", color: "#3a3832", fontFamily: "monospace" }}>No trades yet</div>
-                  )}
-                  {recentTrades.map((trade, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "8px 9px",
-                        background: "rgba(0,0,0,0.14)",
-                        borderRadius: "8px",
-                        marginBottom: i < recentTrades.length - 1 ? "5px" : "0",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "26px",
-                          height: "26px",
-                          background: "rgba(255,255,245,0.04)",
-                          borderRadius: "7px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <ArrowRightIcon />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            fontFamily: "monospace",
-                            color: "#3a3832",
-                            wordBreak: "break-word",
-                          }}
-                        >
-                          {trade}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "11px",
-                          fontFamily: "monospace",
-                          color: "rgba(240,237,230,0.18)",
-                          letterSpacing: "2px",
-                          flexShrink: 0,
-                        }}
-                      >
-                        ░░░░
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => setActiveNav("Transactions")}
-                    style={{
-                      width: "100%",
-                      background: "transparent",
-                      border: "1px solid rgba(255,255,245,0.08)",
-                      borderRadius: "10px",
-                      padding: "9px",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      color: "#6b6860",
-                      cursor: "pointer",
-                      fontFamily: "'Cabinet Grotesk',sans-serif",
-                      marginTop: "12px",
-                    }}
-                  >
-                    View All Transactions →
-                  </button>
-                </div>
-              </div>
+                )}
 
-              {/* 28-day heatmap */}
-              <div style={card}>
-                <div style={cardShine} />
-                <div
-                  style={{
-                    fontSize: "11px",
-                    color: "#3a3832",
-                    fontWeight: 700,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    fontFamily: "monospace",
-                    marginBottom: "10px",
-                  }}
-                >
-                  28-Day Trade Activity
-                </div>
+                {/* Stats: 4 cards */}
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(28,1fr)",
-                    gap: "3px",
-                    alignItems: "flex-end",
-                    height: "40px",
+                    gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
+                    gap: "10px",
+                    marginBottom: "20px",
                   }}
                 >
-                  {heatmap.map(({ intensity, heightPct }, idx) => (
+                  {[
+                    { label: "Total Trades", value: totalTrades.toString(), sub: "All time" },
+                    {
+                      label: "Active Traders",
+                      value: activeTraders.toString(),
+                      sub: "Unique wallets",
+                    },
+                    {
+                      label: "Reserve cUSDT",
+                      value: snapshotA
+                        ? (Number(snapshotA) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                        : "▓▓▓▓",
+                      sub: "Snapshot",
+                      enc: !snapshotA,
+                    },
+                    {
+                      label: "Reserve cETH",
+                      value: snapshotB
+                        ? (Number(snapshotB) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                        : "▓▓▓▓",
+                      sub: "Snapshot",
+                      enc: !snapshotB,
+                    },
+                  ].map((s: any) => (
                     <div
-                      key={idx}
-                      title={`${heatmapCounts[idx]} trade${heatmapCounts[idx] !== 1 ? "s" : ""}`}
+                      key={s.label}
                       style={{
-                        height: `${heightPct}%`,
-                        background: intensity > 0 ? `rgba(255,210,8,${intensity})` : "rgba(255,210,8,0.05)",
-                        borderRadius: "2px 2px 0 0",
-                        minHeight: "2px",
+                        background: "#171714",
+                        borderRadius: "12px",
+                        padding: "14px 16px",
+                        border: "1px solid rgba(255,255,245,0.05)",
                       }}
-                    />
+                    >
+                      <div
+                        style={{
+                          fontSize: "9px",
+                          color: "#3a3832",
+                          fontWeight: 700,
+                          letterSpacing: "0.1em",
+                          textTransform: "uppercase",
+                          fontFamily: "monospace",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {s.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "20px",
+                          fontWeight: 700,
+                          fontFamily: "monospace",
+                          color: s.enc ? "rgba(240,237,230,0.22)" : "#f0ede6",
+                          letterSpacing: s.enc ? "2px" : undefined,
+                        }}
+                      >
+                        {s.value}
+                      </div>
+                      <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>{s.sub}</div>
+                    </div>
                   ))}
                 </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginTop: "8px",
-                    fontSize: "9px",
-                    color: "#3a3832",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  <span>28 days ago</span>
-                  <span>
-                    Today · {totalTrades} swaps {statsRefreshing ? "· refreshing…" : ""}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
 
-          {/* Swap */}
-          {activeNav === "Swap" && (
-            <>
-              {/* Pool not live notice */}
-              {poolInitialized === false && (
+                {/* 2-column: balances + recent trades */}
                 <div
                   style={{
-                    background: "rgba(255,255,245,0.03)",
-                    border: "1px solid rgba(255,255,245,0.08)",
-                    borderRadius: "12px",
-                    padding: "14px 16px",
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                    gap: "18px",
                     marginBottom: "18px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
                   }}
                 >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="#6b6860"
-                    strokeWidth="1.5"
-                    style={{ flexShrink: 0 }}
-                  >
-                    <circle cx="8" cy="8" r="7" />
-                    <path d="M8 5v3.5M8 11v.5" />
-                  </svg>
-                  <div style={{ fontSize: "13px", color: "#6b6860" }}>
-                    Pool not yet live - swapping will be available once initial liquidity is seeded.
-                  </div>
-                </div>
-              )}
-              {/* Page header */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  marginBottom: "22px",
-                  flexWrap: "wrap",
-                  gap: "10px",
-                }}
-              >
-                <div>
-                  <h1 style={{ fontSize: isMobile ? "22px" : "26px", fontWeight: 900, letterSpacing: "-0.04em" }}>
-                    Private <span style={{ color: "#FFD208" }}>Swap</span>
-                  </h1>
-                  <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
-                    Encrypted orders - zero front-running, zero MEV loss
-                  </p>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "7px",
-                    background: "rgba(255,210,8,0.07)",
-                    border: "1px solid rgba(255,210,8,0.22)",
-                    borderRadius: "20px",
-                    padding: "7px 14px",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    color: "#FFD208",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "50%",
-                      background: "#FFD208",
-                      boxShadow: "0 0 8px #FFD208",
-                      display: "inline-block",
-                    }}
-                  />
-                  MEV Protection Active
-                </div>
-              </div>
-
-              {/* Stats */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px", marginBottom: "20px" }}>
-                <div
-                  style={{
-                    background: "#171714",
-                    borderRadius: "12px",
-                    padding: "14px 16px",
-                    border: "1px solid rgba(255,255,245,0.05)",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "9px",
-                      color: "#3a3832",
-                      fontWeight: 700,
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      fontFamily: "monospace",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Total Volume
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "18px",
-                      fontWeight: 700,
-                      fontFamily: "monospace",
-                      color: "rgba(240,237,230,0.22)",
-                      letterSpacing: "2px",
-                    }}
-                  >
-                    ▓▓▓▓▓▓▓▓
-                  </div>
-                  <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>Encrypted on-chain</div>
-                </div>
-                {[
-                  {
-                    n: 1 as const,
-                    label: "Your cUSDT",
-                    value: displayBals[1],
-                    sub: revealed[1] ? "Decrypted balance" : "Encrypted on-chain",
-                    acc: true,
-                    placeholder: !revealed[1],
-                  },
-                  {
-                    n: 2 as const,
-                    label: "Your cETH",
-                    value: displayBals[2],
-                    sub: revealed[2] ? "Decrypted balance" : "Encrypted on-chain",
-                    placeholder: !revealed[2],
-                  },
-                  {
-                    n: 0 as const,
-                    label: "Active Traders",
-                    value: activeTraders.toString(),
-                    sub: "On Sepolia",
-                    placeholder: false,
-                  },
-                ].map((s, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      background: "#171714",
-                      borderRadius: "12px",
-                      padding: "14px 16px",
-                      border: "1px solid rgba(255,255,245,0.05)",
-                    }}
-                  >
+                  {/* Balances card */}
+                  <div style={{ ...card, display: "flex", flexDirection: "column" }}>
+                    <div style={cardShine} />
                     <div
                       style={{
-                        fontSize: "9px",
+                        fontSize: "11px",
                         color: "#3a3832",
                         fontWeight: 700,
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",
                         fontFamily: "monospace",
-                        marginBottom: "8px",
+                        marginBottom: "14px",
                       }}
                     >
-                      {s.label}
+                      Your Balances
                     </div>
-                    <div
-                      style={{
-                        fontSize: s.placeholder ? "18px" : "20px",
-                        fontWeight: 700,
-                        fontFamily: "monospace",
-                        letterSpacing: s.placeholder ? "2px" : "-0.02em",
-                        color:
-                          s.placeholder ? "rgba(240,237,230,0.22)" : s.acc ? "#FFD208" : "#f0ede6",
-                      }}
-                    >
-                      {s.value}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "10px",
-                        color:
-                          s.placeholder ? "#3a3832" : s.acc ? "#FFD208" : "#3a3832",
-                        marginTop: "4px",
-                      }}
-                    >
-                      {s.sub}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Main grid */}
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: "18px" }}>
-                {/* Swap card */}
-                <div
-                  style={{
-                    position: "relative",
-                    borderRadius: "18px",
-                    padding: "22px",
-                    background: "rgba(23,23,20,0.65)",
-                    backdropFilter: "blur(30px)",
-                    border: "1px solid rgba(255,255,245,0.07)",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: "1px",
-                      background:
-                        "linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.18) 25%,rgba(255,210,8,0.3) 50%,rgba(255,255,255,0.08) 75%,transparent 100%)",
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      bottom: 0,
-                      width: "1px",
-                      background:
-                        "linear-gradient(180deg,rgba(255,255,255,0.15) 0%,rgba(255,255,255,0.03) 50%,transparent 100%)",
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "-50px",
-                      right: "-50px",
-                      width: "180px",
-                      height: "180px",
-                      background: "radial-gradient(circle,rgba(255,210,8,0.06) 0%,transparent 70%)",
-                      pointerEvents: "none",
-                    }}
-                  />
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: isMobile ? "flex-start" : "center",
-                      justifyContent: "space-between",
-                      marginBottom: "18px",
-                      flexDirection: isMobile ? "column" : "row",
-                      gap: isMobile ? "10px" : "0",
-                    }}
-                  >
-                    <h3 style={{ fontSize: "14px", fontWeight: 800 }}>Swap Tokens Privately</h3>
-                  </div>
-
-                  {/* You Pay */}
-                  <div
-                    style={{
-                      background: "rgba(0,0,0,0.28)",
-                      border: "1px solid rgba(255,255,245,0.06)",
-                      borderRadius: "12px",
-                      padding: "14px",
-                      marginBottom: "7px",
-                      position: "relative",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: "25%",
-                        right: "25%",
-                        height: "1px",
-                        background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.07),transparent)",
-                      }}
-                    />
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                      <span
-                        style={{
-                          fontSize: "9px",
-                          fontWeight: 700,
-                          color: "#3a3832",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.1em",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        You Pay
-                      </span>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>
-                        Bal:{" "}
-                        <span
-                          style={{
-                            color: revealed[payTokenIndex] ? "#FFD208" : "#3a3832",
-                            cursor: !isMobileReadOnly && canRevealBalances ? "pointer" : "not-allowed",
-                            fontWeight: 700,
-                            fontFamily: "monospace",
-                          }}
-                          onClick={() => {
-                            if (isMobileReadOnly || !canRevealBalances) return;
-                            revealBalance(payTokenIndex);
-                          }}
-                        >
-                          {revealed[payTokenIndex] ? displayBals[payTokenIndex] : "▓▓▓▓"}
-                        </span>{" "}
-                        {payToken.name}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                      <input
-                        type="number"
-                        value={amountIn}
-                        onChange={e => setAmountIn(e.target.value)}
-                        style={
-                          {
-                            background: "transparent",
-                            border: "none",
-                            outline: "none",
-                            fontSize: isMobile ? "22px" : "28px",
-                            fontWeight: 700,
-                            fontFamily: "monospace",
-                            color: "#f0ede6",
-                            width: "100%",
-                            minWidth: 0,
-                            letterSpacing: "-0.02em",
-                            WebkitAppearance: "none",
-                            MozAppearance: "textfield",
-                          } as React.CSSProperties
-                        }
-                      />
+                    {(
+                      [
+                        { n: 1, label: "cUSDT", accent: true },
+                        { n: 2, label: "cETH", accent: false },
+                      ] as const
+                    ).map(({ n, label, accent }) => (
                       <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          background: "rgba(255,255,245,0.05)",
-                          border: "1px solid rgba(255,255,245,0.08)",
-                          borderRadius: "10px",
-                          padding: "8px 10px",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {payToken.icon}
-                        <span style={{ fontSize: "12px", fontWeight: 800 }}>{payToken.name}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Swap arrow */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      position: "relative",
-                      margin: "3px 0",
-                    }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        height: "1px",
-                        background: "rgba(255,255,245,0.04)",
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        setIsAToB(prev => {
-                          const next = !prev;
-                          setAmountIn(prevAmount => {
-                            const current = parseFloat(prevAmount);
-                            if (!Number.isFinite(current) || current <= 0) return prevAmount;
-                            return prev ? (current / RATE).toFixed(6) : (current * RATE).toFixed(6);
-                          });
-                          return next;
-                        });
-                      }}
-                      style={{
-                        width: "32px",
-                        height: "32px",
-                        background: "rgba(255,255,245,0.05)",
-                        border: "1px solid rgba(255,255,245,0.08)",
-                        borderRadius: "9px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        zIndex: 1,
-                      }}
-                    >
-                      <ArrowUpDownIcon />
-                    </button>
-                  </div>
-
-                  {/* You Receive */}
-                  <div
-                    style={{
-                      background: "rgba(0,0,0,0.28)",
-                      border: `1px solid ${amountOut !== null || estimatedOut !== null ? "rgba(255,210,8,0.18)" : "rgba(255,255,245,0.06)"}`,
-                      borderRadius: "12px",
-                      padding: "14px",
-                      position: "relative",
-                      overflow: "hidden",
-                      transition: "border-color 0.4s",
-                    }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: "25%",
-                        right: "25%",
-                        height: "1px",
-                        background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.07),transparent)",
-                      }}
-                    />
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                      <span
-                        style={{
-                          fontSize: "9px",
-                          fontWeight: 700,
-                          color: "#3a3832",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.1em",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        You Receive
-                      </span>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>Encrypted on-chain</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                      <div
-                        style={{
-                          fontSize: isMobile ? "22px" : "26px",
-                          fontFamily: "monospace",
-                          fontWeight: 700,
-                          minHeight: "36px",
-                          color:
-                            amountOut !== null
-                              ? "#FFD208"
-                              : estimatedOut !== null
-                                ? "#f0ede6"
-                                : "rgba(240,237,230,0.22)",
-                          letterSpacing: amountOut !== null ? "-0.02em" : estimatedOut !== null ? "-0.01em" : "2px",
-                          minWidth: 0,
-                          overflow: "hidden",
-                          textShadow: amountOut !== null ? "0 0 20px rgba(255,210,8,0.35)" : "none",
-                          transition: "color 0.3s, text-shadow 0.3s",
-                          animation: amountOut !== null && swapSuccess ? "countUp 0.15s ease" : "none",
-                        }}
-                      >
-                        {isRealSwapping ? (
-                          <span style={{ fontSize: "13px", color: "#3a3832", letterSpacing: "0.05em" }}>
-                            Computing…
-                          </span>
-                        ) : amountOut !== null ? (
-                          amountOut
-                        ) : (
-                          (estimatedOut ?? "▓▓▓▓▓▓▓▓")
-                        )}
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          background: "rgba(255,255,245,0.05)",
-                          border: "1px solid rgba(255,255,245,0.08)",
-                          borderRadius: "10px",
-                          padding: "8px 10px",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {receiveToken.icon}
-                        <span style={{ fontSize: "12px", fontWeight: 800 }}>{receiveToken.name}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Enc notice */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "9px",
-                      background: "rgba(255,210,8,0.07)",
-                      border: "1px solid rgba(255,210,8,0.22)",
-                      borderRadius: "10px",
-                      padding: "9px 12px",
-                      margin: "12px 0",
-                    }}
-                  >
-                    <LockIcon />
-                    <p style={{ fontSize: "11px", color: "#FFD208", fontWeight: 600, lineHeight: 1.4 }}>
-                      Amount encrypts with FHE before submission - front-running impossible
-                    </p>
-                  </div>
-
-                  {/* Rate table */}
-                  <div style={{ marginBottom: "14px" }}>
-                    {[
-                      { k: "Exchange Rate", v: exchangeRateLabel },
-                      { k: "Estimated Output", v: estimatedOut ? `${estimatedOut} ${receiveToken.name}` : "-" },
-                      { k: "Min. Received", v: minReceived ? `${minReceived} ${receiveToken.name}` : "-" },
-                      { k: "Network Fee", v: "~$0.42" },
-                      { k: "MEV Protection", v: "Active", ok: true },
-                    ].map((r, i) => (
-                      <div
-                        key={i}
+                        key={n}
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          padding: "6px 0",
-                          borderBottom: i < 4 ? "1px solid rgba(255,255,245,0.04)" : "none",
+                          padding: "12px 0",
+                          borderBottom: n === 1 ? "1px solid rgba(255,255,245,0.05)" : "none",
                         }}
                       >
-                        <span style={{ fontSize: "11px", color: "#3a3832" }}>{r.k}</span>
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            fontFamily: "monospace",
-                            color: r.ok ? "#FFD208" : "#6b6860",
-                            letterSpacing: "0",
-                            fontWeight: r.ok ? 700 : 400,
-                          }}
-                        >
-                          {r.v}
-                        </span>
+                        <span style={{ fontSize: "13px", color: "#6b6860" }}>{label}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          {balanceSyncing[n] && (
+                            <span style={{ fontSize: "10px", color: "#8f8570", fontWeight: 700 }}>Syncing…</span>
+                          )}
+                          <span
+                            style={{
+                              fontSize: "15px",
+                              fontWeight: 700,
+                              fontFamily: "monospace",
+                              color: accent ? "#FFD208" : "#f0ede6",
+                            }}
+                          >
+                            {displayBals[n]}
+                          </span>
+                          <button
+                            onClick={() => revealBalance(n)}
+                            disabled={isMobileReadOnly || !canRevealBalances || revealing[n] || balanceSyncing[n]}
+                            style={{
+                              background: "transparent",
+                              border: "1px solid rgba(255,255,245,0.08)",
+                              borderRadius: "6px",
+                              padding: "3px 8px",
+                              fontSize: "10px",
+                              color: !canRevealBalances ? "#3a3832" : "#6b6860",
+                              cursor:
+                                isMobileReadOnly || !canRevealBalances || revealing[n] || balanceSyncing[n]
+                                  ? "not-allowed"
+                                  : "pointer",
+                              fontFamily: "'Cabinet Grotesk',sans-serif",
+                            }}
+                          >
+                            {isMobileReadOnly
+                              ? "Desktop required"
+                              : balanceSyncing[n]
+                                ? "Syncing…"
+                                : revealed[n]
+                                  ? "Hide"
+                                  : revealing[n]
+                                    ? "…"
+                                    : "Reveal"}
+                          </button>
+                        </div>
                       </div>
                     ))}
-                  </div>
-
-                  {/* Slippage */}
-                  <div style={{ marginBottom: "14px" }}>
                     <button
-                      onClick={() => setShowSlippage(!showSlippage)}
+                      onClick={() => setActiveNav("Swap")}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        background: "transparent",
+                        marginTop: "12px",
+                        width: "100%",
+                        background: "#FFD208",
                         border: "none",
+                        borderRadius: "10px",
+                        padding: "10px",
+                        fontSize: "13px",
+                        fontWeight: 800,
+                        color: "#000",
                         cursor: "pointer",
-                        fontSize: "11px",
-                        color: "#6b6860",
-                        padding: "0",
                         fontFamily: "'Cabinet Grotesk',sans-serif",
                       }}
                     >
-                      <SettingsIcon size={11} /> Slippage:{" "}
-                      <span style={{ color: "#f0ede6", fontWeight: 700 }}>{slippage}%</span>
-                      <span style={{ fontSize: "9px" }}>{showSlippage ? "▲" : "▼"}</span>
+                      Swap Now →
                     </button>
-                    {showSlippage && (
-                      <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
-                        {["0.1", "0.5", "1.0"].map(s => (
-                          <button
-                            key={s}
-                            onClick={() => setSlippage(s)}
-                            style={{
-                              padding: "5px 12px",
-                              borderRadius: "7px",
-                              fontSize: "11px",
-                              fontWeight: 700,
-                              cursor: "pointer",
-                              border: "1px solid",
-                              borderColor: slippage === s ? "#FFD208" : "rgba(255,255,245,0.08)",
-                              background: slippage === s ? "rgba(255,210,8,0.1)" : "rgba(255,255,245,0.04)",
-                              color: slippage === s ? "#FFD208" : "#6b6860",
-                            }}
-                          >
-                            {s}%
-                          </button>
-                        ))}
-                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <input
-                            type="number"
-                            placeholder="Custom"
-                            value={!["0.1", "0.5", "1.0"].includes(slippage) ? slippage : ""}
-                            onChange={e => setSlippage(e.target.value)}
-                            style={
-                              {
-                                width: "70px",
-                                padding: "5px 8px",
-                                borderRadius: "7px",
-                                fontSize: "11px",
-                                background: "rgba(255,255,245,0.04)",
-                                border: "1px solid rgba(255,255,245,0.08)",
-                                color: "#f0ede6",
-                                outline: "none",
-                                fontFamily: "monospace",
-                                WebkitAppearance: "none",
-                              } as React.CSSProperties
-                            }
-                          />
-                          <span style={{ fontSize: "10px", color: "#6b6860" }}>%</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
-                  {/* FHE status indicator */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "6px", minHeight: "16px" }}>
-                    {fhevmStatus === "ready" && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px", animation: "fadeSlideIn 0.3s ease" }}>
-                        <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px rgba(74,222,128,0.6)" }} />
-                        <span style={{ fontSize: "10px", color: "#4ade80", fontWeight: 600, fontFamily: "monospace", letterSpacing: "0.05em" }}>FHE Ready</span>
-                      </div>
-                    )}
-                    {fhevmStatus === "loading" && isConnected && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                        <svg width="10" height="10" viewBox="0 0 10 10" style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }}>
-                          <circle cx="5" cy="5" r="4" fill="none" stroke="#6b6860" strokeWidth="1.5" strokeDasharray="18" strokeDashoffset="6" strokeLinecap="round" />
-                        </svg>
-                        <span style={{ fontSize: "10px", color: "#6b6860", fontFamily: "monospace" }}>Initializing FHE…</span>
-                      </div>
-                    )}
-                  </div>
-                  {/* Swap button */}
-                  <button
-                    onClick={doSwap}
-                    disabled={
-                      isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
-                    }
-                    style={{
-                      width: "100%",
-                      background:
-                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
-                          ? "rgba(255,210,8,0.1)"
-                          : "#FFD208",
-                      color:
-                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
-                          ? "#FFD208"
-                          : "#000",
-                      border:
-                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
-                          ? "1px solid rgba(255,210,8,0.22)"
-                          : "none",
-                      borderRadius: "12px",
-                      padding: "14px",
-                      fontSize: "14px",
-                      fontWeight: 900,
-                      cursor:
-                        isMobileReadOnly || isSubmitting || !canSwap || isRealSwapping || !isValidAmount || !!fheUnsupportedReason
-                          ? "not-allowed"
-                          : "pointer",
-                      transition: "background 0.25s, color 0.25s",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    {isMobileReadOnly
-                        ? "Desktop required"
-                      : fheUnsupportedReason
-                        ? "FHE Unsupported on Mobile"
-                      : !isValidAmount
-                        ? "Enter an amount"
-                        : swapError
-                          ? "Retry Swap"
-                          : "Swap Privately"}
-                  </button>
-                  {swapClickAcknowledged && !isRealSwapping && swapPendingHint && (
-                    <div
-                      style={{
-                        marginTop: "7px",
-                        fontSize: "10px",
-                        color: "#6b6860",
-                        fontFamily: "monospace",
-                        textAlign: "center",
-                      }}
-                    >
-                      {swapPendingHint}
-                    </div>
-                  )}
-
-                  {/* FHE init error */}
-                  {fhevmStatus === "error" && isConnected && (
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        padding: "10px 12px",
-                        background: "rgba(239,68,68,0.07)",
-                        border: "1px solid rgba(239,68,68,0.18)",
-                        borderRadius: "8px",
-                        fontSize: "11px",
-                        color: "#ef4444",
-                        lineHeight: "1.6",
-                        animation: "fadeSlideIn 0.2s ease",
-                      }}
-                    >
-                      <span style={{ fontWeight: 700 }}>FHE initialization failed.</span> Possible causes: (1) the Zama
-                      relayer at <span style={{ fontFamily: "monospace" }}>relayer.testnet.zama.org</span> is
-                      temporarily unreachable - try clearing your browser DNS cache or switching networks; (2) multiple
-                      wallet extensions installed in the same browser profile can conflict - use a dedicated profile
-                      with one extension.
-                      {fhevmError && (
-                        <span style={{ display: "block", marginTop: "4px", color: "rgba(239,68,68,0.6)", fontFamily: "monospace", fontSize: "10px", wordBreak: "break-all" }}>
-                          {fhevmError.message}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {decryptUiError && isConnected && (
-                    <div
-                      style={{
-                        marginTop: "10px",
-                        color: "rgba(239,68,68,0.8)",
-                        fontFamily: "monospace",
-                        fontSize: "10px",
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {decryptUiError}
-                    </div>
-                  )}
-                  {fheUnsupportedReason && isConnected && (
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        padding: "10px 12px",
-                        background: "rgba(255,255,245,0.03)",
-                        border: "1px solid rgba(255,255,245,0.08)",
-                        borderRadius: "8px",
-                        fontSize: "11px",
-                        color: "#6b6860",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {fheUnsupportedReason} Use desktop browser for FHE decrypt/swap.
-                    </div>
-                  )}
-
-                  {/* Pre-connect / FHE setup notice - hidden once FHE is ready */}
-                  {fhevmStatus !== "ready" && !isRealSwapping && !swapSuccess && (
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        fontSize: "10px",
-                        color: "#3a3832",
-                        lineHeight: "1.5",
-                        textAlign: "center",
-                        letterSpacing: "0.01em",
-                      }}
-                    >
-                      For FHE encryption to work, use a browser profile with one wallet extension installed.
-                    </div>
-                  )}
-
-                  {/* Swap error */}
-                  {swapError && !isRealSwapping && (
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        padding: "9px 12px",
-                        background: "rgba(239,68,68,0.08)",
-                        border: "1px solid rgba(239,68,68,0.2)",
-                        borderRadius: "8px",
-                        fontSize: "11px",
-                        color: "#ef4444",
-                        animation: "fadeSlideIn 0.2s ease",
-                        whiteSpace: "pre-wrap",
-                        overflowWrap: "anywhere",
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {swapError}
-                    </div>
-                  )}
-
-                  {/* TX Steps - shown while swapping or just completed */}
-                  {(isRealSwapping || (txHash && (isConfirmed || swapSuccess))) && (
-                    <div
-                      style={{
-                        background: "rgba(0,0,0,0.22)",
-                        border: "1px solid rgba(255,255,245,0.05)",
-                        borderRadius: "12px",
-                        padding: "16px",
-                        marginTop: "12px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "12px",
-                        animation: "fadeSlideIn 0.25s ease",
-                      }}
-                    >
-                      {[
-                        "Encrypting amount with FHE",
-                        "Setting token operator on-chain",
-                        "Broadcasting encrypted swap tx",
-                        "Waiting for settlement confirmation",
-                      ].map((label, i) => {
-                        const stepNum = i + 1;
-                        const isDone = realTxStep > stepNum;
-                        const isActive = realTxStep === stepNum;
-                        return (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                            <div
-                              style={{
-                                width: "24px",
-                                height: "24px",
-                                borderRadius: "50%",
-                                flexShrink: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: isDone ? "#FFD208" : isActive ? "transparent" : "transparent",
-                                border: isDone ? "none" : isActive ? "1.5px solid #FFD208" : "1.5px solid #2a2a24",
-                                fontSize: "11px",
-                                fontWeight: 800,
-                                color: "#000",
-                                transition: "background 0.1s, border-color 0.1s",
-                                animation: isDone
-                                  ? "stepComplete 0.2s ease"
-                                  : isActive
-                                    ? "stepPulse 1.4s ease-in-out infinite"
-                                    : "none",
-                              }}
-                            >
-                              {isDone ? (
-                                "✓"
-                              ) : isActive ? (
-                                <div
-                                  style={{
-                                    width: "8px",
-                                    height: "8px",
-                                    borderRadius: "50%",
-                                    background: "#FFD208",
-                                    animation: "stepPulse 1s ease-in-out infinite",
-                                  }}
-                                />
-                              ) : null}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <span
-                                style={{
-                                  fontSize: "11px",
-                                  fontWeight: isActive ? 700 : 400,
-                                  color: isDone ? "#4a4a40" : isActive ? "#f0ede6" : "#2a2a24",
-                                  transition: "color 0.1s",
-                                }}
-                              >
-                                {label}
-                              </span>
-                              {isActive && (
-                                <div
-                                  style={{
-                                    marginTop: "4px",
-                                    height: "2px",
-                                    borderRadius: "2px",
-                                    background: "rgba(255,210,8,0.12)",
-                                    overflow: "hidden",
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      height: "100%",
-                                      width: "40%",
-                                      background: "#FFD208",
-                                      borderRadius: "2px",
-                                      animation: "slideIn 1.2s ease-in-out infinite alternate",
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Pool stats */}
-                  <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,245,0.05)" }}>
-                    <div
-                      style={{
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        color: "#3a3832",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        fontFamily: "monospace",
-                        marginBottom: "10px",
-                      }}
-                    >
-                      Pool Stats
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                      {[
-                        { label: "TVL", value: "▓▓▓▓▓▓", enc: true },
-                        { label: "24h Volume", value: "▓▓▓▓▓", enc: true },
-                        { label: "Pool Fee", value: "0.30%" },
-                        { label: "Your Share", value: "▓▓▓▓▓▓", enc: true },
-                      ].map((s, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            background: "rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            padding: "10px 12px",
-                            border: "1px solid rgba(255,255,245,0.04)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "9px",
-                              color: "#3a3832",
-                              fontFamily: "monospace",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.08em",
-                              marginBottom: "5px",
-                            }}
-                          >
-                            {s.label}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "13px",
-                              fontWeight: 700,
-                              fontFamily: "monospace",
-                              color: s.enc ? "rgba(240,237,230,0.2)" : "#f0ede6",
-                              letterSpacing: s.enc ? "1px" : "0",
-                            }}
-                          >
-                            {s.value}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right column */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {/* MEV */}
+                  {/* Recent trades (real on-chain data) */}
                   <div style={card}>
                     <div style={cardShine} />
                     <div
@@ -2587,347 +1549,26 @@ export function SwapPage() {
                         marginBottom: "12px",
                       }}
                     >
-                      <h4 style={{ fontSize: "12px", fontWeight: 800 }}>MEV Protection</h4>
                       <div
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "5px",
-                          background: "rgba(255,210,8,0.07)",
-                          border: "1px solid rgba(255,210,8,0.22)",
-                          borderRadius: "20px",
-                          padding: "3px 9px",
-                          fontSize: "9px",
+                          fontSize: "11px",
+                          color: "#3a3832",
                           fontWeight: 700,
-                          color: "#FFD208",
+                          letterSpacing: "0.1em",
+                          textTransform: "uppercase",
                           fontFamily: "monospace",
                         }}
                       >
-                        <span
-                          style={{
-                            width: "5px",
-                            height: "5px",
-                            borderRadius: "50%",
-                            background: "#FFD208",
-                            display: "inline-block",
-                          }}
-                        />
-                        Live
+                        Recent Trades
                       </div>
+                      <span style={{ fontSize: "10px", color: "#3a3832" }}>Global pool activity</span>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px" }}>
-                      <div
-                        style={{
-                          background: "rgba(239,68,68,0.07)",
-                          border: "1px solid rgba(239,68,68,0.15)",
-                          borderRadius: "8px",
-                          padding: "10px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "8px",
-                            fontWeight: 700,
-                            letterSpacing: "0.12em",
-                            textTransform: "uppercase",
-                            marginBottom: "6px",
-                            color: "#ef4444",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          Public DEX
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            fontFamily: "monospace",
-                            lineHeight: 1.8,
-                            color: "rgba(239,68,68,0.7)",
-                          }}
-                        >
-                          SWAP 1,000
-                          <br />
-                          USDT - ETH
-                          <br />
-                          <br />
-                          <span style={{ fontSize: "9px" }}>Bot reads this</span>
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          background: "rgba(255,210,8,0.07)",
-                          border: "1px solid rgba(255,210,8,0.22)",
-                          borderRadius: "8px",
-                          padding: "10px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "8px",
-                            fontWeight: 700,
-                            letterSpacing: "0.12em",
-                            textTransform: "uppercase",
-                            marginBottom: "6px",
-                            color: "#FFD208",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          CipherDEX
-                        </div>
-                        <div style={{ fontSize: "10px", fontFamily: "monospace", lineHeight: 1.8, color: "#3a3832" }}>
-                          0x4f2a
-                          <br />
-                          9c81d3e7
-                          <br />
-                          <br />
-                          <span style={{ color: "#FFD208", fontSize: "9px" }}>Encrypted</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Balances */}
-                  <div style={card}>
-                    <div style={cardShine} />
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "12px",
-                      }}
-                    >
-                      <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Your Balances</h4>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>
-                        {isMobileReadOnly
-                          ? "Desktop required"
-                          : balanceSyncing[1] || balanceSyncing[2]
-                            ? "Balances syncing…"
-                            : canRevealBalances
-                              ? "Tap to decrypt"
-                              : "Loading stats…"}
-                      </span>
-                    </div>
-                    {[
-                      { n: 1, name: "cUSDT", sub: "Confidential USDT", icon: <CUSDTIcon large /> },
-                      { n: 2, name: "cETH", sub: "Confidential ETH", icon: <CETHIcon large /> },
-                    ].map(token => (
-                      <div
-                        key={token.n}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "10px 0",
-                          borderBottom: token.n === 1 ? "1px solid rgba(255,255,245,0.04)" : "none",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          {token.icon}
-                          <div>
-                            <div style={{ fontSize: "12px", fontWeight: 800 }}>{token.name}</div>
-                            <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "1px" }}>{token.sub}</div>
-                          </div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          {balanceSyncing[token.n] && (
-                            <div style={{ fontSize: "10px", color: "#8f8570", fontWeight: 700, marginBottom: "2px" }}>
-                              Syncing…
-                            </div>
-                          )}
-                          <div
-                            style={{
-                              fontSize: "13px",
-                              fontFamily: "monospace",
-                              minWidth: "80px",
-                              textAlign: "right",
-                              color: revealed[token.n] ? "#FFD208" : "rgba(240,237,230,0.25)",
-                              letterSpacing: revealed[token.n] ? "0" : "1px",
-                              fontWeight: revealed[token.n] ? 600 : 400,
-                              textShadow: revealed[token.n] ? "0 0 10px rgba(255,210,8,0.3)" : "none",
-                              transition: "text-shadow 0.4s",
-                            }}
-                          >
-                            {displayBals[token.n]}
-                          </div>
-                          <button
-                            onClick={() => revealBalance(token.n as 1 | 2)}
-                            disabled={isMobileReadOnly || !canRevealBalances || revealing[token.n] || balanceSyncing[token.n]}
-                            style={{
-                              fontSize: "9px",
-                              fontWeight: 700,
-                              color: revealed[token.n] ? "#FFD208" : "#3a3832",
-                              background: revealed[token.n] ? "rgba(255,210,8,0.07)" : "rgba(0,0,0,0.18)",
-                              border: revealed[token.n]
-                                ? "1px solid rgba(255,210,8,0.22)"
-                                : "1px solid rgba(255,255,245,0.05)",
-                              borderRadius: "5px",
-                              padding: "3px 9px",
-                              cursor:
-                                isMobileReadOnly || !canRevealBalances || revealing[token.n] || balanceSyncing[token.n]
-                                  ? "not-allowed"
-                                  : "pointer",
-                              marginTop: "3px",
-                              display: "block",
-                              width: "100%",
-                              transition: "all 0.3s",
-                            }}
-                          >
-                            {balanceSyncing[token.n] ? "Syncing…" : revealing[token.n] ? "Decrypting…" : revealed[token.n] ? "Hide" : "Reveal"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Trading Activity */}
-                  <div style={card}>
-                    <div style={cardShine} />
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "12px",
-                      }}
-                    >
-                      <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Trading Activity</h4>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>Last 4 weeks</span>
-                    </div>
-                    <div
-                      style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "3px", marginBottom: "5px" }}
-                    >
-                      {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-                        <div
-                          key={i}
-                          style={{ fontSize: "8px", color: "#3a3832", textAlign: "center", fontFamily: "monospace" }}
-                        >
-                          {d}
-                        </div>
-                      ))}
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(7,1fr)",
-                        gap: "3px",
-                        position: "relative",
-                      }}
-                    >
-                      {heatmap.map(({ intensity }, i) => {
-                        const op = intensity > 0 ? intensity : 0.05;
-                        const tradeCount = heatmapCounts[i];
-                        const daysAgo = 27 - i;
-                        const date = new Date();
-                        date.setDate(date.getDate() - daysAgo);
-                        const label = date.toLocaleDateString("en", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        });
-                        return (
-                          <div
-                            key={i}
-                            style={{
-                              aspectRatio: "1",
-                              borderRadius: "3px",
-                              background: `rgba(255,210,8,${op})`,
-                              cursor: "default",
-                              position: "relative",
-                            }}
-                            onMouseEnter={e => {
-                              const t = e.currentTarget.querySelector(".tip") as HTMLElement;
-                              if (t) t.style.display = "block";
-                            }}
-                            onMouseLeave={e => {
-                              const t = e.currentTarget.querySelector(".tip") as HTMLElement;
-                              if (t) t.style.display = "none";
-                            }}
-                          >
-                            <div
-                              className="tip"
-                              style={{
-                                display: "none",
-                                position: "absolute",
-                                bottom: "calc(100% + 6px)",
-                                left: "50%",
-                                transform: "translateX(-50%)",
-                                background: "#1e1e1a",
-                                border: "1px solid rgba(255,255,245,0.1)",
-                                borderRadius: "6px",
-                                padding: "5px 8px",
-                                whiteSpace: "nowrap",
-                                zIndex: 50,
-                                pointerEvents: "none",
-                              }}
-                            >
-                              <div
-                                style={{ fontSize: "9px", fontWeight: 700, color: "#f0ede6", fontFamily: "monospace" }}
-                              >
-                                {tradeCount} swap{tradeCount !== 1 ? "s" : ""}
-                              </div>
-                              <div
-                                style={{ fontSize: "9px", color: "#6b6860", fontFamily: "monospace", marginTop: "1px" }}
-                              >
-                                {label}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px" }}>
-                      <div>
-                        <div style={{ fontSize: "16px", fontWeight: 700, fontFamily: "monospace", color: "#FFD208" }}>
-                          {totalTrades.toLocaleString()}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "9px",
-                            color: "#3a3832",
-                            fontFamily: "monospace",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
-                            marginTop: "2px",
-                          }}
-                        >
-                          Total trades
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: "16px", fontWeight: 700, fontFamily: "monospace" }}>
-                          {activeTraders.toString()}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "9px",
-                            color: "#3a3832",
-                            fontFamily: "monospace",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
-                            marginTop: "2px",
-                          }}
-                        >
-                          Traders
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Recent Trades */}
-                  <div style={card}>
-                    <div style={cardShine} />
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "12px",
-                      }}
-                    >
-                      <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Recent Trades</h4>
-                      <span style={{ fontSize: "10px", color: "#3a3832" }}>All private</span>
-                    </div>
+                    {statsLoading && recentTrades.length === 0 && (
+                      <div style={{ fontSize: "12px", color: "#3a3832", fontFamily: "monospace" }}>Loading…</div>
+                    )}
+                    {!statsLoading && recentTrades.length === 0 && (
+                      <div style={{ fontSize: "12px", color: "#3a3832", fontFamily: "monospace" }}>No trades yet</div>
+                    )}
                     {recentTrades.map((trade, i) => (
                       <div
                         key={i}
@@ -2938,8 +1579,7 @@ export function SwapPage() {
                           padding: "8px 9px",
                           background: "rgba(0,0,0,0.14)",
                           borderRadius: "8px",
-                          marginBottom: i < 2 ? "5px" : "0",
-                          cursor: "pointer",
+                          marginBottom: i < recentTrades.length - 1 ? "5px" : "0",
                         }}
                       >
                         <div
@@ -2962,9 +1602,6 @@ export function SwapPage() {
                               fontSize: "10px",
                               fontFamily: "monospace",
                               color: "#3a3832",
-                              whiteSpace: "normal",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
                               wordBreak: "break-word",
                             }}
                           >
@@ -2973,24 +1610,1584 @@ export function SwapPage() {
                         </div>
                         <div
                           style={{
-                            fontSize: "9px",
-                            fontWeight: 700,
-                            color: "#3a3832",
-                            background: "rgba(255,255,245,0.04)",
-                            borderRadius: "4px",
-                            padding: "2px 6px",
+                            fontSize: "11px",
                             fontFamily: "monospace",
+                            color: "rgba(240,237,230,0.18)",
+                            letterSpacing: "2px",
+                            flexShrink: 0,
                           }}
                         >
-                          Settled
+                          ░░░░
                         </div>
                       </div>
                     ))}
+                    <button
+                      onClick={() => setActiveNav("Transactions")}
+                      style={{
+                        width: "100%",
+                        background: "transparent",
+                        border: "1px solid rgba(255,255,245,0.08)",
+                        borderRadius: "10px",
+                        padding: "9px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#6b6860",
+                        cursor: "pointer",
+                        fontFamily: "'Cabinet Grotesk',sans-serif",
+                        marginTop: "12px",
+                      }}
+                    >
+                      View All Transactions →
+                    </button>
                   </div>
                 </div>
-              </div>
-            </>
-          )}
+
+                {/* 28-day heatmap */}
+                <div style={card}>
+                  <div style={cardShine} />
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "#3a3832",
+                      fontWeight: 700,
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      fontFamily: "monospace",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    28-Day Trade Activity
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(28,1fr)",
+                      gap: "3px",
+                      alignItems: "flex-end",
+                      height: "40px",
+                    }}
+                  >
+                    {heatmap.map(({ intensity, heightPct }, idx) => (
+                      <div
+                        key={idx}
+                        title={`${heatmapCounts[idx]} trade${heatmapCounts[idx] !== 1 ? "s" : ""}`}
+                        style={{
+                          height: `${heightPct}%`,
+                          background: intensity > 0 ? `rgba(255,210,8,${intensity})` : "rgba(255,210,8,0.05)",
+                          borderRadius: "2px 2px 0 0",
+                          minHeight: "2px",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginTop: "8px",
+                      fontSize: "9px",
+                      color: "#3a3832",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    <span>28 days ago</span>
+                    <span>
+                      Today · {totalTrades} swaps {statsRefreshing ? "· refreshing…" : ""}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Swap */}
+            {activeNav === "Swap" && (
+              <>
+                {/* Pool not live notice */}
+                {poolInitialized === false && (
+                  <div
+                    style={{
+                      background: "rgba(255,255,245,0.03)",
+                      border: "1px solid rgba(255,255,245,0.08)",
+                      borderRadius: "12px",
+                      padding: "14px 16px",
+                      marginBottom: "18px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="#6b6860"
+                      strokeWidth="1.5"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <circle cx="8" cy="8" r="7" />
+                      <path d="M8 5v3.5M8 11v.5" />
+                    </svg>
+                    <div style={{ fontSize: "13px", color: "#6b6860" }}>
+                      Pool not yet live - swapping will be available once initial liquidity is seeded.
+                    </div>
+                  </div>
+                )}
+                {/* Page header */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    marginBottom: "22px",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                  }}
+                >
+                  <div>
+                    <h1 style={{ fontSize: isMobile ? "22px" : "26px", fontWeight: 900, letterSpacing: "-0.04em" }}>
+                      Private <span style={{ color: "#FFD208" }}>Swap</span>
+                    </h1>
+                    <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
+                      Encrypted orders - zero front-running, zero MEV loss
+                    </p>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "7px",
+                      background: "rgba(255,210,8,0.07)",
+                      border: "1px solid rgba(255,210,8,0.22)",
+                      borderRadius: "20px",
+                      padding: "7px 14px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#FFD208",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "50%",
+                        background: "#FFD208",
+                        boxShadow: "0 0 8px #FFD208",
+                        display: "inline-block",
+                      }}
+                    />
+                    MEV Protection Active
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div
+                  style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px", marginBottom: "20px" }}
+                >
+                  <div
+                    style={{
+                      background: "#171714",
+                      borderRadius: "12px",
+                      padding: "14px 16px",
+                      border: "1px solid rgba(255,255,245,0.05)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "9px",
+                        color: "#3a3832",
+                        fontWeight: 700,
+                        letterSpacing: "0.1em",
+                        textTransform: "uppercase",
+                        fontFamily: "monospace",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Total Volume
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: 700,
+                        fontFamily: "monospace",
+                        color: "rgba(240,237,230,0.22)",
+                        letterSpacing: "2px",
+                      }}
+                    >
+                      ▓▓▓▓▓▓▓▓
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "4px" }}>Encrypted on-chain</div>
+                  </div>
+                  {[
+                    {
+                      n: 1 as const,
+                      label: "Your cUSDT",
+                      value: displayBals[1],
+                      sub: revealed[1] ? "Decrypted balance" : "Encrypted on-chain",
+                      acc: true,
+                      placeholder: !revealed[1],
+                    },
+                    {
+                      n: 2 as const,
+                      label: "Your cETH",
+                      value: displayBals[2],
+                      sub: revealed[2] ? "Decrypted balance" : "Encrypted on-chain",
+                      placeholder: !revealed[2],
+                    },
+                    {
+                      n: 0 as const,
+                      label: "Active Traders",
+                      value: activeTraders.toString(),
+                      sub: "On Sepolia",
+                      placeholder: false,
+                    },
+                  ].map((s, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        background: "#171714",
+                        borderRadius: "12px",
+                        padding: "14px 16px",
+                        border: "1px solid rgba(255,255,245,0.05)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "9px",
+                          color: "#3a3832",
+                          fontWeight: 700,
+                          letterSpacing: "0.1em",
+                          textTransform: "uppercase",
+                          fontFamily: "monospace",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {s.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: s.placeholder ? "18px" : "20px",
+                          fontWeight: 700,
+                          fontFamily: "monospace",
+                          letterSpacing: s.placeholder ? "2px" : "-0.02em",
+                          color: s.placeholder ? "rgba(240,237,230,0.22)" : s.acc ? "#FFD208" : "#f0ede6",
+                        }}
+                      >
+                        {s.value}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "10px",
+                          color: s.placeholder ? "#3a3832" : s.acc ? "#FFD208" : "#3a3832",
+                          marginTop: "4px",
+                        }}
+                      >
+                        {s.sub}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Main grid */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: "18px" }}>
+                  {/* Swap card */}
+                  <div
+                    style={{
+                      position: "relative",
+                      borderRadius: "18px",
+                      padding: "22px",
+                      background: "rgba(23,23,20,0.65)",
+                      backdropFilter: "blur(30px)",
+                      border: "1px solid rgba(255,255,245,0.07)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: "1px",
+                        background:
+                          "linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.18) 25%,rgba(255,210,8,0.3) 50%,rgba(255,255,255,0.08) 75%,transparent 100%)",
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        bottom: 0,
+                        width: "1px",
+                        background:
+                          "linear-gradient(180deg,rgba(255,255,255,0.15) 0%,rgba(255,255,255,0.03) 50%,transparent 100%)",
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "-50px",
+                        right: "-50px",
+                        width: "180px",
+                        height: "180px",
+                        background: "radial-gradient(circle,rgba(255,210,8,0.06) 0%,transparent 70%)",
+                        pointerEvents: "none",
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: isMobile ? "flex-start" : "center",
+                        justifyContent: "space-between",
+                        marginBottom: "18px",
+                        flexDirection: isMobile ? "column" : "row",
+                        gap: isMobile ? "10px" : "0",
+                      }}
+                    >
+                      <h3 style={{ fontSize: "14px", fontWeight: 800 }}>Swap Tokens Privately</h3>
+                    </div>
+
+                    {/* You Pay */}
+                    <div
+                      style={{
+                        background: "rgba(0,0,0,0.28)",
+                        border: "1px solid rgba(255,255,245,0.06)",
+                        borderRadius: "12px",
+                        padding: "14px",
+                        marginBottom: "7px",
+                        position: "relative",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: "25%",
+                          right: "25%",
+                          height: "1px",
+                          background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.07),transparent)",
+                        }}
+                      />
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                        <span
+                          style={{
+                            fontSize: "9px",
+                            fontWeight: 700,
+                            color: "#3a3832",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.1em",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          You Pay
+                        </span>
+                        <span style={{ fontSize: "10px", color: "#3a3832" }}>
+                          Bal:{" "}
+                          <span
+                            style={{
+                              color: revealed[payTokenIndex] ? "#FFD208" : "#3a3832",
+                              cursor: !isMobileReadOnly && canRevealBalances ? "pointer" : "not-allowed",
+                              fontWeight: 700,
+                              fontFamily: "monospace",
+                            }}
+                            onClick={() => {
+                              if (isMobileReadOnly || !canRevealBalances) return;
+                              revealBalance(payTokenIndex);
+                            }}
+                          >
+                            {revealed[payTokenIndex] ? displayBals[payTokenIndex] : "▓▓▓▓"}
+                          </span>{" "}
+                          {payToken.name}
+                        </span>
+                      </div>
+                      <div
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}
+                      >
+                        <input
+                          type="number"
+                          value={amountIn}
+                          onChange={e => setAmountIn(e.target.value)}
+                          style={
+                            {
+                              background: "transparent",
+                              border: "none",
+                              outline: "none",
+                              fontSize: isMobile ? "22px" : "28px",
+                              fontWeight: 700,
+                              fontFamily: "monospace",
+                              color: "#f0ede6",
+                              width: "100%",
+                              minWidth: 0,
+                              letterSpacing: "-0.02em",
+                              WebkitAppearance: "none",
+                              MozAppearance: "textfield",
+                            } as React.CSSProperties
+                          }
+                        />
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            background: "rgba(255,255,245,0.05)",
+                            border: "1px solid rgba(255,255,245,0.08)",
+                            borderRadius: "10px",
+                            padding: "8px 10px",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {payToken.icon}
+                          <span style={{ fontSize: "12px", fontWeight: 800 }}>{payToken.name}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Swap arrow */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        position: "relative",
+                        margin: "3px 0",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          height: "1px",
+                          background: "rgba(255,255,245,0.04)",
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          setIsAToB(prev => {
+                            const next = !prev;
+                            setAmountIn(prevAmount => {
+                              const current = parseFloat(prevAmount);
+                              if (!Number.isFinite(current) || current <= 0) return prevAmount;
+                              return prev ? (current / RATE).toFixed(6) : (current * RATE).toFixed(6);
+                            });
+                            return next;
+                          });
+                        }}
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          background: "rgba(255,255,245,0.05)",
+                          border: "1px solid rgba(255,255,245,0.08)",
+                          borderRadius: "9px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          zIndex: 1,
+                        }}
+                      >
+                        <ArrowUpDownIcon />
+                      </button>
+                    </div>
+
+                    {/* You Receive */}
+                    <div
+                      style={{
+                        background: "rgba(0,0,0,0.28)",
+                        border: `1px solid ${amountOut !== null || estimatedOut !== null ? "rgba(255,210,8,0.18)" : "rgba(255,255,245,0.06)"}`,
+                        borderRadius: "12px",
+                        padding: "14px",
+                        position: "relative",
+                        overflow: "hidden",
+                        transition: "border-color 0.4s",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: "25%",
+                          right: "25%",
+                          height: "1px",
+                          background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.07),transparent)",
+                        }}
+                      />
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                        <span
+                          style={{
+                            fontSize: "9px",
+                            fontWeight: 700,
+                            color: "#3a3832",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.1em",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          You Receive
+                        </span>
+                        <span style={{ fontSize: "10px", color: "#3a3832" }}>Encrypted on-chain</span>
+                      </div>
+                      <div
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}
+                      >
+                        <div
+                          style={{
+                            fontSize: isMobile ? "22px" : "26px",
+                            fontFamily: "monospace",
+                            fontWeight: 700,
+                            minHeight: "36px",
+                            color:
+                              amountOut !== null
+                                ? "#FFD208"
+                                : estimatedOut !== null
+                                  ? "#f0ede6"
+                                  : "rgba(240,237,230,0.22)",
+                            letterSpacing: amountOut !== null ? "-0.02em" : estimatedOut !== null ? "-0.01em" : "2px",
+                            minWidth: 0,
+                            overflow: "hidden",
+                            textShadow: amountOut !== null ? "0 0 20px rgba(255,210,8,0.35)" : "none",
+                            transition: "color 0.3s, text-shadow 0.3s",
+                            animation: amountOut !== null && swapSuccess ? "countUp 0.15s ease" : "none",
+                          }}
+                        >
+                          {isRealSwapping ? (
+                            <span style={{ fontSize: "13px", color: "#3a3832", letterSpacing: "0.05em" }}>
+                              Computing…
+                            </span>
+                          ) : amountOut !== null ? (
+                            amountOut
+                          ) : (
+                            (estimatedOut ?? "▓▓▓▓▓▓▓▓")
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            background: "rgba(255,255,245,0.05)",
+                            border: "1px solid rgba(255,255,245,0.08)",
+                            borderRadius: "10px",
+                            padding: "8px 10px",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {receiveToken.icon}
+                          <span style={{ fontSize: "12px", fontWeight: 800 }}>{receiveToken.name}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enc notice */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "9px",
+                        background: "rgba(255,210,8,0.07)",
+                        border: "1px solid rgba(255,210,8,0.22)",
+                        borderRadius: "10px",
+                        padding: "9px 12px",
+                        margin: "12px 0",
+                      }}
+                    >
+                      <LockIcon />
+                      <p style={{ fontSize: "11px", color: "#FFD208", fontWeight: 600, lineHeight: 1.4 }}>
+                        swap amounts are encrypted on-chain. wallet addresses and transaction metadata remain public, as
+                        on any blockchain.
+                      </p>
+                    </div>
+
+                    {/* Rate table */}
+                    <div style={{ marginBottom: "14px" }}>
+                      {[
+                        { k: "Exchange Rate", v: exchangeRateLabel },
+                        { k: "Estimated Output", v: estimatedOut ? `${estimatedOut} ${receiveToken.name}` : "-" },
+                        { k: "Min. Received", v: minReceived ? `${minReceived} ${receiveToken.name}` : "-" },
+                        { k: "Network Fee", v: "~$0.42" },
+                        { k: "MEV Protection", v: "Active", ok: true },
+                      ].map((r, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "6px 0",
+                            borderBottom: i < 4 ? "1px solid rgba(255,255,245,0.04)" : "none",
+                          }}
+                        >
+                          <span style={{ fontSize: "11px", color: "#3a3832" }}>{r.k}</span>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontFamily: "monospace",
+                              color: r.ok ? "#FFD208" : "#6b6860",
+                              letterSpacing: "0",
+                              fontWeight: r.ok ? 700 : 400,
+                            }}
+                          >
+                            {r.v}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Slippage */}
+                    <div style={{ marginBottom: "14px" }}>
+                      <button
+                        onClick={() => setShowSlippage(!showSlippage)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: "11px",
+                          color: "#6b6860",
+                          padding: "0",
+                          fontFamily: "'Cabinet Grotesk',sans-serif",
+                        }}
+                      >
+                        <SettingsIcon size={11} /> Slippage:{" "}
+                        <span style={{ color: "#f0ede6", fontWeight: 700 }}>{slippage}%</span>
+                        <span style={{ fontSize: "9px" }}>{showSlippage ? "▲" : "▼"}</span>
+                      </button>
+                      {showSlippage && (
+                        <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                          {["0.1", "0.5", "1.0"].map(s => (
+                            <button
+                              key={s}
+                              onClick={() => setSlippage(s)}
+                              style={{
+                                padding: "5px 12px",
+                                borderRadius: "7px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                border: "1px solid",
+                                borderColor: slippage === s ? "#FFD208" : "rgba(255,255,245,0.08)",
+                                background: slippage === s ? "rgba(255,210,8,0.1)" : "rgba(255,255,245,0.04)",
+                                color: slippage === s ? "#FFD208" : "#6b6860",
+                              }}
+                            >
+                              {s}%
+                            </button>
+                          ))}
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <input
+                              type="number"
+                              placeholder="Custom"
+                              value={!["0.1", "0.5", "1.0"].includes(slippage) ? slippage : ""}
+                              onChange={e => setSlippage(e.target.value)}
+                              style={
+                                {
+                                  width: "70px",
+                                  padding: "5px 8px",
+                                  borderRadius: "7px",
+                                  fontSize: "11px",
+                                  background: "rgba(255,255,245,0.04)",
+                                  border: "1px solid rgba(255,255,245,0.08)",
+                                  color: "#f0ede6",
+                                  outline: "none",
+                                  fontFamily: "monospace",
+                                  WebkitAppearance: "none",
+                                } as React.CSSProperties
+                              }
+                            />
+                            <span style={{ fontSize: "10px", color: "#6b6860" }}>%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* FHE status indicator */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "flex-end",
+                        marginBottom: "6px",
+                        minHeight: "16px",
+                      }}
+                    >
+                      {fhevmStatus === "ready" && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            animation: "fadeSlideIn 0.3s ease",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "6px",
+                              height: "6px",
+                              borderRadius: "50%",
+                              background: "#4ade80",
+                              boxShadow: "0 0 6px rgba(74,222,128,0.6)",
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              color: "#4ade80",
+                              fontWeight: 600,
+                              fontFamily: "monospace",
+                              letterSpacing: "0.05em",
+                            }}
+                          >
+                            FHE Ready
+                          </span>
+                        </div>
+                      )}
+                      {fhevmStatus === "loading" && isConnected && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 10 10"
+                            style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }}
+                          >
+                            <circle
+                              cx="5"
+                              cy="5"
+                              r="4"
+                              fill="none"
+                              stroke="#6b6860"
+                              strokeWidth="1.5"
+                              strokeDasharray="18"
+                              strokeDashoffset="6"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          <span style={{ fontSize: "10px", color: "#6b6860", fontFamily: "monospace" }}>
+                            Initializing FHE…
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Swap button */}
+                    <button
+                      onClick={doSwap}
+                      disabled={
+                        isMobileReadOnly ||
+                        !isFheReady ||
+                        isSubmitting ||
+                        !canSwap ||
+                        isRealSwapping ||
+                        !isValidAmount ||
+                        !!fheUnsupportedReason
+                      }
+                      style={{
+                        width: "100%",
+                        background:
+                          isMobileReadOnly ||
+                          !isFheReady ||
+                          isSubmitting ||
+                          !canSwap ||
+                          isRealSwapping ||
+                          !isValidAmount ||
+                          !!fheUnsupportedReason
+                            ? "rgba(255,210,8,0.1)"
+                            : "#FFD208",
+                        color:
+                          isMobileReadOnly ||
+                          !isFheReady ||
+                          isSubmitting ||
+                          !canSwap ||
+                          isRealSwapping ||
+                          !isValidAmount ||
+                          !!fheUnsupportedReason
+                            ? "#FFD208"
+                            : "#000",
+                        border:
+                          isMobileReadOnly ||
+                          !isFheReady ||
+                          isSubmitting ||
+                          !canSwap ||
+                          isRealSwapping ||
+                          !isValidAmount ||
+                          !!fheUnsupportedReason
+                            ? "1px solid rgba(255,210,8,0.22)"
+                            : "none",
+                        borderRadius: "12px",
+                        padding: "14px",
+                        fontSize: "14px",
+                        fontWeight: 900,
+                        cursor:
+                          isMobileReadOnly ||
+                          !isFheReady ||
+                          isSubmitting ||
+                          !canSwap ||
+                          isRealSwapping ||
+                          !isValidAmount ||
+                          !!fheUnsupportedReason
+                            ? "not-allowed"
+                            : "pointer",
+                        transition: "background 0.25s, color 0.25s",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      {isMobileReadOnly
+                        ? "Desktop required for swapping"
+                        : !isFheReady
+                          ? "Waiting for FHE..."
+                          : fheUnsupportedReason
+                            ? "FHE Unsupported on Mobile"
+                            : !isValidAmount
+                              ? "Enter an amount"
+                              : swapError
+                                ? "Retry Swap"
+                                : "Swap Privately"}
+                    </button>
+                    {swapClickAcknowledged && !isRealSwapping && swapPendingHint && (
+                      <div
+                        style={{
+                          marginTop: "7px",
+                          fontSize: "10px",
+                          color: "#6b6860",
+                          fontFamily: "monospace",
+                          textAlign: "center",
+                        }}
+                      >
+                        {swapPendingHint}
+                      </div>
+                    )}
+
+                    {/* FHE init error */}
+                    {fhevmStatus === "error" && isConnected && (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          padding: "10px 12px",
+                          background: "rgba(239,68,68,0.07)",
+                          border: "1px solid rgba(239,68,68,0.18)",
+                          borderRadius: "8px",
+                          fontSize: "11px",
+                          color: "#ef4444",
+                          lineHeight: "1.6",
+                          animation: "fadeSlideIn 0.2s ease",
+                        }}
+                      >
+                        <span style={{ fontWeight: 700 }}>FHE initialization failed.</span> Possible causes: (1) the
+                        Zama relayer at <span style={{ fontFamily: "monospace" }}>relayer.testnet.zama.org</span> is
+                        temporarily unreachable - try clearing your browser DNS cache or switching networks; (2)
+                        multiple wallet extensions installed in the same browser profile can conflict - use a dedicated
+                        profile with one extension.
+                        {fhevmError && (
+                          <span
+                            style={{
+                              display: "block",
+                              marginTop: "4px",
+                              color: "rgba(239,68,68,0.6)",
+                              fontFamily: "monospace",
+                              fontSize: "10px",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {fhevmError.message}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {decryptUiError && isConnected && (
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          color: "rgba(239,68,68,0.8)",
+                          fontFamily: "monospace",
+                          fontSize: "10px",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {decryptUiError}
+                      </div>
+                    )}
+                    {fheUnsupportedReason && isConnected && (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          padding: "10px 12px",
+                          background: "rgba(255,255,245,0.03)",
+                          border: "1px solid rgba(255,255,245,0.08)",
+                          borderRadius: "8px",
+                          fontSize: "11px",
+                          color: "#6b6860",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {fheUnsupportedReason} Use desktop browser for FHE decrypt/swap.
+                      </div>
+                    )}
+
+                    {/* Pre-connect / FHE setup notice - hidden once FHE is ready */}
+                    {fhevmStatus !== "ready" && !isRealSwapping && !swapSuccess && (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          fontSize: "10px",
+                          color: "#3a3832",
+                          lineHeight: "1.5",
+                          textAlign: "center",
+                          letterSpacing: "0.01em",
+                        }}
+                      >
+                        For FHE encryption to work, use a browser profile with one wallet extension installed.
+                      </div>
+                    )}
+
+                    {/* Swap error */}
+                    {swapError && !isRealSwapping && (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          padding: "9px 12px",
+                          background: "rgba(239,68,68,0.08)",
+                          border: "1px solid rgba(239,68,68,0.2)",
+                          borderRadius: "8px",
+                          fontSize: "11px",
+                          color: "#ef4444",
+                          animation: "fadeSlideIn 0.2s ease",
+                          whiteSpace: "pre-wrap",
+                          overflowWrap: "anywhere",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {swapError}
+                      </div>
+                    )}
+
+                    {/* TX Steps - shown while swapping or just completed */}
+                    {(isRealSwapping || (txHash && (isConfirmed || swapSuccess))) && (
+                      <div
+                        style={{
+                          background: "rgba(0,0,0,0.22)",
+                          border: "1px solid rgba(255,255,245,0.05)",
+                          borderRadius: "12px",
+                          padding: "16px",
+                          marginTop: "12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "12px",
+                          animation: "fadeSlideIn 0.25s ease",
+                        }}
+                      >
+                        {[
+                          "Encrypting amount with FHE",
+                          "Setting token operator on-chain",
+                          "Broadcasting encrypted swap tx",
+                          "Waiting for settlement confirmation",
+                        ].map((label, i) => {
+                          const stepNum = i + 1;
+                          const isDone = realTxStep > stepNum;
+                          const isActive = realTxStep === stepNum;
+                          return (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                              <div
+                                style={{
+                                  width: "24px",
+                                  height: "24px",
+                                  borderRadius: "50%",
+                                  flexShrink: 0,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  background: isDone ? "#FFD208" : isActive ? "transparent" : "transparent",
+                                  border: isDone ? "none" : isActive ? "1.5px solid #FFD208" : "1.5px solid #2a2a24",
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                  color: "#000",
+                                  transition: "background 0.1s, border-color 0.1s",
+                                  animation: isDone
+                                    ? "stepComplete 0.2s ease"
+                                    : isActive
+                                      ? "stepPulse 1.4s ease-in-out infinite"
+                                      : "none",
+                                }}
+                              >
+                                {isDone ? (
+                                  "✓"
+                                ) : isActive ? (
+                                  <div
+                                    style={{
+                                      width: "8px",
+                                      height: "8px",
+                                      borderRadius: "50%",
+                                      background: "#FFD208",
+                                      animation: "stepPulse 1s ease-in-out infinite",
+                                    }}
+                                  />
+                                ) : null}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    fontWeight: isActive ? 700 : 400,
+                                    color: isDone ? "#4a4a40" : isActive ? "#f0ede6" : "#2a2a24",
+                                    transition: "color 0.1s",
+                                  }}
+                                >
+                                  {label}
+                                </span>
+                                {isActive && (
+                                  <div
+                                    style={{
+                                      marginTop: "4px",
+                                      height: "2px",
+                                      borderRadius: "2px",
+                                      background: "rgba(255,210,8,0.12)",
+                                      overflow: "hidden",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        height: "100%",
+                                        width: "40%",
+                                        background: "#FFD208",
+                                        borderRadius: "2px",
+                                        animation: "slideIn 1.2s ease-in-out infinite alternate",
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Pool stats */}
+                    <div
+                      style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid rgba(255,255,245,0.05)" }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          color: "#3a3832",
+                          letterSpacing: "0.1em",
+                          textTransform: "uppercase",
+                          fontFamily: "monospace",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Pool Stats
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                        {[
+                          { label: "TVL", value: "▓▓▓▓▓▓", enc: true },
+                          { label: "24h Volume", value: "▓▓▓▓▓", enc: true },
+                          { label: "Pool Fee", value: "0.30%" },
+                          { label: "Your Share", value: "▓▓▓▓▓▓", enc: true },
+                        ].map((s, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              background: "rgba(0,0,0,0.2)",
+                              borderRadius: "8px",
+                              padding: "10px 12px",
+                              border: "1px solid rgba(255,255,245,0.04)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "9px",
+                                color: "#3a3832",
+                                fontFamily: "monospace",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.08em",
+                                marginBottom: "5px",
+                              }}
+                            >
+                              {s.label}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "13px",
+                                fontWeight: 700,
+                                fontFamily: "monospace",
+                                color: s.enc ? "rgba(240,237,230,0.2)" : "#f0ede6",
+                                letterSpacing: s.enc ? "1px" : "0",
+                              }}
+                            >
+                              {s.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right column */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {/* MEV */}
+                    <div style={card}>
+                      <div style={cardShine} />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <h4 style={{ fontSize: "12px", fontWeight: 800 }}>MEV Protection</h4>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            background: "rgba(255,210,8,0.07)",
+                            border: "1px solid rgba(255,210,8,0.22)",
+                            borderRadius: "20px",
+                            padding: "3px 9px",
+                            fontSize: "9px",
+                            fontWeight: 700,
+                            color: "#FFD208",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: "5px",
+                              height: "5px",
+                              borderRadius: "50%",
+                              background: "#FFD208",
+                              display: "inline-block",
+                            }}
+                          />
+                          Live
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px" }}>
+                        <div
+                          style={{
+                            background: "rgba(239,68,68,0.07)",
+                            border: "1px solid rgba(239,68,68,0.15)",
+                            borderRadius: "8px",
+                            padding: "10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "8px",
+                              fontWeight: 700,
+                              letterSpacing: "0.12em",
+                              textTransform: "uppercase",
+                              marginBottom: "6px",
+                              color: "#ef4444",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            Public DEX
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "10px",
+                              fontFamily: "monospace",
+                              lineHeight: 1.8,
+                              color: "rgba(239,68,68,0.7)",
+                            }}
+                          >
+                            SWAP 1,000
+                            <br />
+                            USDT - ETH
+                            <br />
+                            <br />
+                            <span style={{ fontSize: "9px" }}>Bot reads this</span>
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            background: "rgba(255,210,8,0.07)",
+                            border: "1px solid rgba(255,210,8,0.22)",
+                            borderRadius: "8px",
+                            padding: "10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "8px",
+                              fontWeight: 700,
+                              letterSpacing: "0.12em",
+                              textTransform: "uppercase",
+                              marginBottom: "6px",
+                              color: "#FFD208",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            CipherDEX
+                          </div>
+                          <div style={{ fontSize: "10px", fontFamily: "monospace", lineHeight: 1.8, color: "#3a3832" }}>
+                            0x4f2a
+                            <br />
+                            9c81d3e7
+                            <br />
+                            <br />
+                            <span style={{ color: "#FFD208", fontSize: "9px" }}>Encrypted</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Balances */}
+                    <div style={card}>
+                      <div style={cardShine} />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Your Balances</h4>
+                        <span style={{ fontSize: "10px", color: "#3a3832" }}>
+                          {isMobileReadOnly
+                            ? "Desktop required"
+                            : balanceSyncing[1] || balanceSyncing[2]
+                              ? "Balances syncing…"
+                              : canRevealBalances
+                                ? "Tap to decrypt"
+                                : "Loading stats…"}
+                        </span>
+                      </div>
+                      {[
+                        { n: 1, name: "cUSDT", sub: "Confidential USDT", icon: <CUSDTIcon large /> },
+                        { n: 2, name: "cETH", sub: "Confidential ETH", icon: <CETHIcon large /> },
+                      ].map(token => (
+                        <div
+                          key={token.n}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "10px 0",
+                            borderBottom: token.n === 1 ? "1px solid rgba(255,255,245,0.04)" : "none",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            {token.icon}
+                            <div>
+                              <div style={{ fontSize: "12px", fontWeight: 800 }}>{token.name}</div>
+                              <div style={{ fontSize: "10px", color: "#3a3832", marginTop: "1px" }}>{token.sub}</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            {balanceSyncing[token.n] && (
+                              <div style={{ fontSize: "10px", color: "#8f8570", fontWeight: 700, marginBottom: "2px" }}>
+                                Syncing…
+                              </div>
+                            )}
+                            <div
+                              style={{
+                                fontSize: "13px",
+                                fontFamily: "monospace",
+                                minWidth: "80px",
+                                textAlign: "right",
+                                color: revealed[token.n] ? "#FFD208" : "rgba(240,237,230,0.25)",
+                                letterSpacing: revealed[token.n] ? "0" : "1px",
+                                fontWeight: revealed[token.n] ? 600 : 400,
+                                textShadow: revealed[token.n] ? "0 0 10px rgba(255,210,8,0.3)" : "none",
+                                transition: "text-shadow 0.4s",
+                              }}
+                            >
+                              {displayBals[token.n]}
+                            </div>
+                            <button
+                              onClick={() => revealBalance(token.n as 1 | 2)}
+                              disabled={
+                                isMobileReadOnly || !canRevealBalances || revealing[token.n] || balanceSyncing[token.n]
+                              }
+                              style={{
+                                fontSize: "9px",
+                                fontWeight: 700,
+                                color: revealed[token.n] ? "#FFD208" : "#3a3832",
+                                background: revealed[token.n] ? "rgba(255,210,8,0.07)" : "rgba(0,0,0,0.18)",
+                                border: revealed[token.n]
+                                  ? "1px solid rgba(255,210,8,0.22)"
+                                  : "1px solid rgba(255,255,245,0.05)",
+                                borderRadius: "5px",
+                                padding: "3px 9px",
+                                cursor:
+                                  isMobileReadOnly ||
+                                  !canRevealBalances ||
+                                  revealing[token.n] ||
+                                  balanceSyncing[token.n]
+                                    ? "not-allowed"
+                                    : "pointer",
+                                marginTop: "3px",
+                                display: "block",
+                                width: "100%",
+                                transition: "all 0.3s",
+                              }}
+                            >
+                              {isMobileReadOnly
+                                ? "Desktop required"
+                                : balanceSyncing[token.n]
+                                  ? "Syncing…"
+                                  : revealing[token.n]
+                                    ? "Decrypting…"
+                                    : revealed[token.n]
+                                      ? "Hide"
+                                      : "Reveal"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Trading Activity */}
+                    <div style={card}>
+                      <div style={cardShine} />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Trading Activity</h4>
+                        <span style={{ fontSize: "10px", color: "#3a3832" }}>Global pool activity</span>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(7,1fr)",
+                          gap: "3px",
+                          marginBottom: "5px",
+                        }}
+                      >
+                        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                          <div
+                            key={i}
+                            style={{ fontSize: "8px", color: "#3a3832", textAlign: "center", fontFamily: "monospace" }}
+                          >
+                            {d}
+                          </div>
+                        ))}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(7,1fr)",
+                          gap: "3px",
+                          position: "relative",
+                        }}
+                      >
+                        {heatmap.map(({ intensity }, i) => {
+                          const op = intensity > 0 ? intensity : 0.05;
+                          const tradeCount = heatmapCounts[i];
+                          const daysAgo = 27 - i;
+                          const date = new Date();
+                          date.setDate(date.getDate() - daysAgo);
+                          const label = date.toLocaleDateString("en", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          });
+                          return (
+                            <div
+                              key={i}
+                              style={{
+                                aspectRatio: "1",
+                                borderRadius: "3px",
+                                background: `rgba(255,210,8,${op})`,
+                                cursor: "default",
+                                position: "relative",
+                              }}
+                              onMouseEnter={e => {
+                                const t = e.currentTarget.querySelector(".tip") as HTMLElement;
+                                if (t) t.style.display = "block";
+                              }}
+                              onMouseLeave={e => {
+                                const t = e.currentTarget.querySelector(".tip") as HTMLElement;
+                                if (t) t.style.display = "none";
+                              }}
+                            >
+                              <div
+                                className="tip"
+                                style={{
+                                  display: "none",
+                                  position: "absolute",
+                                  bottom: "calc(100% + 6px)",
+                                  left: "50%",
+                                  transform: "translateX(-50%)",
+                                  background: "#1e1e1a",
+                                  border: "1px solid rgba(255,255,245,0.1)",
+                                  borderRadius: "6px",
+                                  padding: "5px 8px",
+                                  whiteSpace: "nowrap",
+                                  zIndex: 50,
+                                  pointerEvents: "none",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: "9px",
+                                    fontWeight: 700,
+                                    color: "#f0ede6",
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  {tradeCount} swap{tradeCount !== 1 ? "s" : ""}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: "9px",
+                                    color: "#6b6860",
+                                    fontFamily: "monospace",
+                                    marginTop: "1px",
+                                  }}
+                                >
+                                  {label}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px" }}>
+                        <div>
+                          <div style={{ fontSize: "16px", fontWeight: 700, fontFamily: "monospace", color: "#FFD208" }}>
+                            {totalTrades.toLocaleString()}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "9px",
+                              color: "#3a3832",
+                              fontFamily: "monospace",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.08em",
+                              marginTop: "2px",
+                            }}
+                          >
+                            Total trades
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: "16px", fontWeight: 700, fontFamily: "monospace" }}>
+                            {activeTraders.toString()}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "9px",
+                              color: "#3a3832",
+                              fontFamily: "monospace",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.08em",
+                              marginTop: "2px",
+                            }}
+                          >
+                            Traders
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recent Trades */}
+                    <div style={card}>
+                      <div style={cardShine} />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <h4 style={{ fontSize: "12px", fontWeight: 800 }}>Recent Trades</h4>
+                        <span style={{ fontSize: "10px", color: "#3a3832" }}>Global pool activity</span>
+                      </div>
+                      {recentTrades.map((trade, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            padding: "8px 9px",
+                            background: "rgba(0,0,0,0.14)",
+                            borderRadius: "8px",
+                            marginBottom: i < 2 ? "5px" : "0",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "26px",
+                              height: "26px",
+                              background: "rgba(255,255,245,0.04)",
+                              borderRadius: "7px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            }}
+                          >
+                            <ArrowRightIcon />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: "10px",
+                                fontFamily: "monospace",
+                                color: "#3a3832",
+                                whiteSpace: "normal",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {trade}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "9px",
+                              fontWeight: 700,
+                              color: "#3a3832",
+                              background: "rgba(255,255,245,0.04)",
+                              borderRadius: "4px",
+                              padding: "2px 6px",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            Settled
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <div
+            style={{
+              marginTop: "14px",
+              fontSize: "10px",
+              color: "#3a3832",
+              fontFamily: "monospace",
+              textAlign: "center",
+            }}
+          >
+            CipherDEX is optimized for desktop browsers with a single wallet extension installed. Mobile wallet actions
+            are not supported.
           </div>
         </main>
       </div>
@@ -3087,10 +3284,15 @@ export function SwapPage() {
           <div>
             <div style={{ fontSize: "13px", fontWeight: 800 }}>Swap Completed</div>
             <div
-              onClick={() => toastTxHashRef.current && window.open(`https://sepolia.etherscan.io/tx/${toastTxHashRef.current}`, "_blank")}
+              onClick={() =>
+                toastTxHashRef.current &&
+                window.open(`https://sepolia.etherscan.io/tx/${toastTxHashRef.current}`, "_blank")
+              }
               style={{ fontSize: "10px", color: "#FFD208", cursor: "pointer", marginTop: "2px" }}
             >
-              {toastTxHashRef.current ? `${toastTxHashRef.current.slice(0, 10)}…  View on Etherscan →` : "View on Etherscan →"}
+              {toastTxHashRef.current
+                ? `${toastTxHashRef.current.slice(0, 10)}…  View on Etherscan →`
+                : "View on Etherscan →"}
             </div>
           </div>
           <span

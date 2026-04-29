@@ -133,6 +133,7 @@ export function usePoolStats() {
       const latestBlock = await publicClient.getBlockNumber();
       const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
       const quickFrom = latestBlock > QUICK_LOOKBACK_BLOCKS ? latestBlock - QUICK_LOOKBACK_BLOCKS : 0n;
+      const needsBackfill = quickFrom > fromBlock;
 
       const quickLogs = await fetchEventLogsChunked({
         publicClient,
@@ -143,11 +144,30 @@ export function usePoolStats() {
         toBlock: latestBlock,
       });
       if (requestId !== loadRequestRef.current) return;
+
+      // On initial foreground load, avoid painting quick partial stats first.
+      // This prevents "wrong then correct" stat flashes right after page load.
+      if (foreground && needsBackfill) {
+        const fullLogs = await fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock,
+          toBlock: latestBlock,
+        });
+        if (requestId !== loadRequestRef.current) return;
+        applySwapLogs(fullLogs);
+        setRefreshing(false);
+        setLoading(false);
+        return;
+      }
+
       applySwapLogs(quickLogs);
       setRefreshing(false);
       if (foreground) setLoading(false);
 
-      if (quickFrom > fromBlock) {
+      if (needsBackfill) {
         void fetchEventLogsChunked({
           publicClient,
           address: CONTRACTS.pool,

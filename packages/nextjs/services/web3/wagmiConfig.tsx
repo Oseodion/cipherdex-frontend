@@ -20,6 +20,19 @@ export const wagmiConfig = createConfig({
     const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
     const preferAlchemyRpc = process.env.NEXT_PUBLIC_PREFER_ALCHEMY_RPC === "true";
     const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
+    const overrideIsAlchemy = !!rpcOverrideUrl && rpcOverrideUrl.includes("alchemy.com");
+    const effectiveOverrideUrl = !preferAlchemyRpc && overrideIsAlchemy ? undefined : rpcOverrideUrl;
+    const chainSafeFallbacks =
+      chain.id === 1
+        ? ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"]
+        : chain.id === 11155111
+          ? [
+              "https://ethereum-sepolia-rpc.publicnode.com",
+              "https://rpc.sepolia.org",
+              "https://sepolia.gateway.tenderly.co",
+              "https://eth-sepolia.public.blastapi.io",
+            ]
+          : [];
     const extraSepoliaFallbacks =
       chain.id === 11155111
         ? [
@@ -29,13 +42,16 @@ export const wagmiConfig = createConfig({
             "https://eth-sepolia.public.blastapi.io",
           ]
         : [];
-    const primaryUrl = preferAlchemyRpc ? alchemyHttpUrl || rpcOverrideUrl : rpcOverrideUrl || extraSepoliaFallbacks[0] || alchemyHttpUrl;
+    const primaryUrl = preferAlchemyRpc
+      ? alchemyHttpUrl || effectiveOverrideUrl
+      : effectiveOverrideUrl || extraSepoliaFallbacks[0];
+    const alchemyFallback = preferAlchemyRpc ? [alchemyHttpUrl] : [];
     const rpcUrls = Array.from(
       new Set(
-        [primaryUrl, ...extraSepoliaFallbacks, alchemyHttpUrl].filter((url): url is string => !!url),
+        [primaryUrl, ...chainSafeFallbacks, ...alchemyFallback].filter((url): url is string => !!url),
       ),
     );
-    const rpcFallbacks = rpcUrls.length > 0 ? rpcUrls.map(url => http(url)) : [http()];
+    const rpcFallbacks = rpcUrls.map(url => http(url));
     return createClient({
       chain,
       transport: fallback(rpcFallbacks),

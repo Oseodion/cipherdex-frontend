@@ -180,7 +180,8 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
 
   useEffect(() => {
     const onSwapConfirmed = (evt: Event) => {
-      const detail = (evt as CustomEvent<{ txHash?: string; aToB?: boolean; trader?: string; timestamp?: number }>).detail;
+      const detail = (evt as CustomEvent<{ txHash?: string; aToB?: boolean; trader?: string; timestamp?: number }>)
+        .detail;
       if (detail?.txHash && typeof detail?.aToB === "boolean" && detail?.trader) {
         const optimistic: PoolActivityEvent = {
           kind: "swap",
@@ -207,13 +208,19 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
     };
   }, [load]);
 
+  const scopedEvents = useMemo(() => {
+    if (!address) return [];
+    const lower = address.toLowerCase();
+    return events.filter(e => e.actor.toLowerCase() === lower);
+  }, [events, address]);
+
   const filtered = useMemo(() => {
-    if (filter === "cUSDT→cETH") return events.filter(e => e.kind === "swap" && e.aToB);
-    if (filter === "cETH→cUSDT") return events.filter(e => e.kind === "swap" && !e.aToB);
-    if (filter === "Add liquidity") return events.filter(e => e.kind === "add");
-    if (filter === "Remove liquidity") return events.filter(e => e.kind === "remove");
-    return events;
-  }, [events, filter]);
+    if (filter === "cUSDT→cETH") return scopedEvents.filter(e => e.kind === "swap" && e.aToB);
+    if (filter === "cETH→cUSDT") return scopedEvents.filter(e => e.kind === "swap" && !e.aToB);
+    if (filter === "Add liquidity") return scopedEvents.filter(e => e.kind === "add");
+    if (filter === "Remove liquidity") return scopedEvents.filter(e => e.kind === "remove");
+    return scopedEvents;
+  }, [scopedEvents, filter]);
 
   const label: React.CSSProperties = {
     fontSize: "9px",
@@ -234,13 +241,22 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
   return (
     <div style={{ width: "100%" }}>
       {/* Header */}
-      <div style={{ marginBottom: "22px", display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginBottom: "22px",
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
         <h1 style={{ fontSize: "26px", fontWeight: 900, letterSpacing: "-0.04em" }}>
           Transaction <span style={{ color: "#FFD208" }}>History</span>
         </h1>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px" }}>
           <p style={{ fontSize: "13px", color: "#6b6860", marginTop: "3px" }}>
-            Swaps and liquidity changes from the pool contract - amounts stay encrypted on-chain
+            swap amounts are encrypted on-chain. wallet addresses and transaction metadata remain public, as on any
+            blockchain.
           </p>
           {loading && (
             <div
@@ -342,7 +358,7 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
               fontSize: "13px",
             }}
           >
-            No transactions found
+            {address ? "No transactions found" : "Connect wallet to view your activity history."}
           </div>
         )}
         {!loading && !error && filtered.length > 0 && (
@@ -414,7 +430,14 @@ export function TransactionsPage({ address, isMobile }: { address?: string; isMo
                       {ev.kind === "swap" ? (
                         <>
                           <span style={{ color: ev.aToB ? "#fbbf24" : "#60a5fa" }}>{ev.aToB ? "cUSDT" : "cETH"}</span>
-                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#3a3832" strokeWidth="1.5">
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 10 10"
+                            fill="none"
+                            stroke="#3a3832"
+                            strokeWidth="1.5"
+                          >
                             <path d="M1 5h8M6 2l3 3-3 3" />
                           </svg>
                           <span style={{ color: ev.aToB ? "#60a5fa" : "#fbbf24" }}>{ev.aToB ? "cETH" : "cUSDT"}</span>
