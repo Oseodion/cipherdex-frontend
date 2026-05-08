@@ -7,7 +7,8 @@ import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const LOOKBACK_BLOCKS = 60000n;
+const LOOKBACK_BLOCKS = 250000n;
+const HEATMAP_DAYS = 28;
 
 const formatAge = (timestampSeconds: number) => {
   const delta = Math.max(0, Math.floor(Date.now() / 1000) - timestampSeconds);
@@ -49,7 +50,7 @@ export function usePoolStats() {
   const publicClient = usePublicClient();
   const [activeTraders, setActiveTraders] = useState(0);
   const [totalTrades, setTotalTrades] = useState(0);
-  const [heatmapCounts, setHeatmapCounts] = useState<number[]>(Array(28).fill(0));
+  const [heatmapCounts, setHeatmapCounts] = useState<number[]>(Array(HEATMAP_DAYS).fill(0));
   const [recentTrades, setRecentTrades] = useState<string[]>([]);
   const [swapRecords, setSwapRecords] = useState<SwapRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +76,7 @@ export function usePoolStats() {
           index === self.findIndex(l => l.transactionHash === log.transactionHash && l.logIndex === log.logIndex),
       );
 
-      const dayBuckets = Array(28).fill(0);
+      const dayBuckets = Array(HEATMAP_DAYS).fill(0);
       const uniqueTraders = new Set<string>();
       const todayUtc = startOfUtcDayMs(Date.now());
 
@@ -109,8 +110,8 @@ export function usePoolStats() {
       swaps.forEach(item => {
         const eventUtc = startOfUtcDayMs(item.timestamp * 1000);
         const daysAgo = Math.floor((todayUtc - eventUtc) / DAY_MS);
-        const bucketIdx = 27 - daysAgo;
-        if (daysAgo >= 0 && daysAgo < 28) {
+        const bucketIdx = HEATMAP_DAYS - 1 - daysAgo;
+        if (daysAgo >= 0 && daysAgo < HEATMAP_DAYS) {
           dayBuckets[bucketIdx] += 1;
         }
         uniqueTraders.add(item.trader.toLowerCase());
