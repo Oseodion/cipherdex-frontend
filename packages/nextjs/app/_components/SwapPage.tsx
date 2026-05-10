@@ -9,7 +9,8 @@ import { SettingsPage } from "./SettingsPage";
 import { TransactionsPage } from "./TransactionsPage";
 import { useFhevm } from "@fhevm-sdk";
 import { flushSync } from "react-dom";
-import { useConnectorClient } from "wagmi";
+import { sepolia } from "viem/chains";
+import { useBalance, useConnectorClient } from "wagmi";
 import { RainbowKitCustomConnectButton } from "~~/components/helper/RainbowKitCustomConnectButton";
 import { useBalances } from "~~/hooks/useBalances";
 import { CONTRACTS, useCipherDEX } from "~~/hooks/useCipherDEX";
@@ -17,6 +18,9 @@ import { useFaucet } from "~~/hooks/useFaucet";
 import { usePoolInit } from "~~/hooks/usePoolInit";
 import { usePoolStats } from "~~/hooks/usePoolStats";
 import { useSwap } from "~~/hooks/useSwap";
+
+const ZERO_BALANCE_DECRYPT_HINT =
+  "Claim faucet tokens first to initialize your encrypted balance.";
 
 const normalizeDecryptError = (raw: string | null | undefined) => {
   if (!raw) return "Decrypt failed. Please try again.";
@@ -55,6 +59,20 @@ export function SwapPage() {
   const swapPendingTimeoutRef = useRef<number | null>(null);
 
   const { address, isConnected, chainId, ethersSigner } = useCipherDEX();
+
+  const { data: nativeSepoliaBalance, isFetched: nativeSepoliaBalanceFetched } = useBalance({
+    address,
+    chainId: sepolia.id,
+    query: {
+      enabled: Boolean(isConnected && address && chainId === sepolia.id),
+    },
+  });
+  const showSepoliaGasWarning =
+    isConnected &&
+    !!address &&
+    chainId === sepolia.id &&
+    nativeSepoliaBalanceFetched &&
+    nativeSepoliaBalance?.value === 0n;
   const proofsStorageKey = useMemo(
     () => `cipherdex_fhe_proofs:${(address ?? "guest").toLowerCase()}:${CONTRACTS.pool.toLowerCase()}`,
     [address],
@@ -206,15 +224,22 @@ export function SwapPage() {
     if (decryptRequest === null || !decryptError) return;
     if (decryptKickoffRef.current !== decryptRequest) return;
     const n = decryptRequest;
-    setDecryptUiError(normalizeDecryptError(decryptError));
-    setDecryptRequest(null);
-    decryptKickoffRef.current = null;
-    setRevealing(prev => ({ ...prev, [n]: false }));
-    if (revealTimeoutRef.current) {
-      window.clearTimeout(revealTimeoutRef.current);
-      revealTimeoutRef.current = null;
-    }
-  }, [decryptRequest, decryptError]);
+    void (async () => {
+      const refreshed = await refetch();
+      if (decryptKickoffRef.current !== n) return;
+      const tokenReady = n === 1 ? refreshed.usdtReady : refreshed.ethReady;
+      const friendly =
+        isFheReady && !tokenReady ? ZERO_BALANCE_DECRYPT_HINT : normalizeDecryptError(decryptError);
+      setDecryptUiError(friendly);
+      setDecryptRequest(null);
+      decryptKickoffRef.current = null;
+      setRevealing(prev => ({ ...prev, [n]: false }));
+      if (revealTimeoutRef.current) {
+        window.clearTimeout(revealTimeoutRef.current);
+        revealTimeoutRef.current = null;
+      }
+    })();
+  }, [decryptRequest, decryptError, refetch, isFheReady]);
 
   useEffect(() => {
     if (decryptRequest === null) return;
@@ -512,9 +537,27 @@ export function SwapPage() {
       return;
     }
 
-    if (fhevmStatus !== "ready" || !canDecrypt) {
+    if (fhevmStatus !== "ready") {
       setDecryptUiError("FHE wallet session not ready yet. Reconnect wallet and try reveal again.");
       return;
+    }
+    const handleReady = n === 1 ? hasUSDTHandle : hasETHHandle;
+    if (!handleReady) {
+      // Give fresh encrypted handles a short chance to arrive before blocking reveal.
+      let readyAfterRefetch = false;
+      for (let i = 0; i < 4; i++) {
+        const refreshed = await refetch();
+        const tokenReady = n === 1 ? refreshed.usdtReady : refreshed.ethReady;
+        if (tokenReady) {
+          readyAfterRefetch = true;
+          break;
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 700));
+      }
+      if (!readyAfterRefetch) {
+        setDecryptUiError(ZERO_BALANCE_DECRYPT_HINT);
+        return;
+      }
     }
 
     setRevealing(prev => ({ ...prev, [n]: true }));
@@ -966,6 +1009,33 @@ export function SwapPage() {
                   ? `Wait ${cooldownFormatted}`
                   : "Claim from Faucet"}
           </button>
+          {showSepoliaGasWarning && (
+            <div
+              role="status"
+              style={{
+                marginTop: "10px",
+                fontSize: "10px",
+                lineHeight: 1.45,
+                color: "#FFD208",
+                textAlign: "center",
+                padding: "8px 8px",
+                borderRadius: "8px",
+                background: "rgba(255,210,8,0.06)",
+                border: "1px solid rgba(255,210,8,0.2)",
+                fontFamily: "monospace",
+              }}
+            >
+              You need Sepolia ETH for gas fees. Get some free at{" "}
+              <a
+                href="https://sepoliafaucet.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#FFD208", fontWeight: 700, textDecoration: "underline" }}
+              >
+                sepoliafaucet.com
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -1154,41 +1224,78 @@ export function SwapPage() {
                 <span style={{ color: "#3a3832" }}>›</span>
                 <span style={{ color: "#f0ede6", fontWeight: 600 }}>Swap</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <button
-                  onClick={() => setActiveNav("Settings")}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    margin: 0,
-                    fontSize: "11px",
-                    color: "#8a8680",
-                    textDecoration: "underline",
-                    textUnderlineOffset: "2px",
-                    cursor: "pointer",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  Wallet tips
-                </button>
-                {isMobile ? (
-                  <span
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-end",
+                  gap: "6px",
+                  minWidth: 0,
+                  maxWidth: "min(420px, 42vw)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button
+                    onClick={() => setActiveNav("Settings")}
                     style={{
-                      fontSize: "10px",
-                      fontWeight: 700,
-                      color: "#FFD208",
-                      border: "1px solid rgba(255,210,8,0.28)",
-                      background: "rgba(255,210,8,0.08)",
-                      borderRadius: "999px",
-                      padding: "5px 10px",
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      margin: 0,
+                      fontSize: "11px",
+                      color: "#8a8680",
+                      textDecoration: "underline",
+                      textUnderlineOffset: "2px",
+                      cursor: "pointer",
                       fontFamily: "monospace",
                     }}
                   >
-                    Connect wallet on desktop
-                  </span>
-                ) : (
-                  <RainbowKitCustomConnectButton />
+                    Wallet tips
+                  </button>
+                  {isMobile ? (
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        color: "#FFD208",
+                        border: "1px solid rgba(255,210,8,0.28)",
+                        background: "rgba(255,210,8,0.08)",
+                        borderRadius: "999px",
+                        padding: "5px 10px",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      Connect wallet on desktop
+                    </span>
+                  ) : (
+                    <RainbowKitCustomConnectButton />
+                  )}
+                </div>
+                {!isMobile && showSepoliaGasWarning && (
+                  <div
+                    role="status"
+                    style={{
+                      fontSize: "10px",
+                      lineHeight: 1.45,
+                      color: "#FFD208",
+                      textAlign: "right",
+                      padding: "6px 10px",
+                      borderRadius: "8px",
+                      background: "rgba(255,210,8,0.08)",
+                      border: "1px solid rgba(255,210,8,0.22)",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    You need Sepolia ETH for gas fees. Get some free at{" "}
+                    <a
+                      href="https://sepoliafaucet.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#FFD208", fontWeight: 700, textDecoration: "underline" }}
+                    >
+                      sepoliafaucet.com
+                    </a>
+                  </div>
                 )}
               </div>
             </>
@@ -1651,7 +1758,7 @@ export function SwapPage() {
                   </div>
                 </div>
 
-                {/* 28-day heatmap */}
+                {/* 56-day heatmap */}
                 <div style={card}>
                   <div style={cardShine} />
                   <div
@@ -1665,12 +1772,12 @@ export function SwapPage() {
                       marginBottom: "10px",
                     }}
                   >
-                    28-Day Trade Activity
+                    {heatmapCounts.length}-Day Trade Activity
                   </div>
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(28,1fr)",
+                      gridTemplateColumns: `repeat(${heatmapCounts.length},1fr)`,
                       gap: "3px",
                       alignItems: "flex-end",
                       height: "40px",
@@ -1699,7 +1806,7 @@ export function SwapPage() {
                       fontFamily: "monospace",
                     }}
                   >
-                    <span>28 days ago</span>
+                    <span>{heatmapCounts.length} days ago</span>
                     <span>
                       Today · {totalTrades} swaps {statsRefreshing ? "· refreshing…" : ""}
                     </span>
@@ -3001,7 +3108,7 @@ export function SwapPage() {
                         {heatmap.map(({ intensity }, i) => {
                           const op = intensity > 0 ? intensity : 0.05;
                           const tradeCount = heatmapCounts[i];
-                          const daysAgo = 27 - i;
+                          const daysAgo = heatmapCounts.length - 1 - i;
                           const date = new Date();
                           date.setUTCDate(date.getUTCDate() - daysAgo);
                           const label = date.toLocaleDateString("en", {

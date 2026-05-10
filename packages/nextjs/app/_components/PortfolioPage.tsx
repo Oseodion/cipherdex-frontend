@@ -9,10 +9,16 @@ import { CONTRACTS } from "~~/hooks/useCipherDEX";
 import { usePoolInit } from "~~/hooks/usePoolInit";
 import { useWagmiEthers } from "~~/hooks/wagmi/useWagmiEthers";
 
+const ZERO_BALANCE_DECRYPT_HINT =
+  "Claim faucet tokens first to initialize your encrypted balance.";
+
 const normalizeDecryptError = (raw: string) => {
   const msg = raw.toLowerCase();
-  if (msg.includes("not authorized")) {
-    return "Wallet is not authorized for this ciphertext yet. Wait a few seconds and try again.";
+  if (msg.includes("an error occured during decryption") || msg.includes("an error occurred during decryption")) {
+    return "Decrypt failed. Please retry in a few seconds.";
+  }
+  if (msg.includes("not authorized") || msg.includes("user decrypt handle")) {
+    return "Wallet is not authorized for this ciphertext yet, or the balance is still syncing. Retry in a few seconds.";
   }
   if (msg.includes("networkerror") || msg.includes("failed to fetch") || msg.includes("relayer")) {
     return "Relayer request failed. Check network and retry reveal.";
@@ -51,8 +57,15 @@ export function PortfolioPage({
 
   useEffect(() => {
     if (!decryptError) return;
-    setDecryptUiError(normalizeDecryptError(decryptError));
-  }, [decryptError]);
+    void (async () => {
+      const refreshed = await refetch();
+      if (!refreshed.usdtReady && !refreshed.ethReady && fhevmInstance) {
+        setDecryptUiError(ZERO_BALANCE_DECRYPT_HINT);
+      } else {
+        setDecryptUiError(normalizeDecryptError(decryptError));
+      }
+    })();
+  }, [decryptError, refetch, fhevmInstance]);
 
   useEffect(() => {
     if (!isDecrypting && revealTimeoutRef.current) {
@@ -88,7 +101,7 @@ export function PortfolioPage({
     }
 
     if (!readyUSDT && !readyETH) {
-      setDecryptUiError("Encrypted balances are still syncing. Wait a few seconds, then reveal again.");
+      setDecryptUiError(ZERO_BALANCE_DECRYPT_HINT);
       return;
     }
 
