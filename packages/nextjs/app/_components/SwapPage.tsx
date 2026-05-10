@@ -1224,78 +1224,41 @@ export function SwapPage() {
                 <span style={{ color: "#3a3832" }}>›</span>
                 <span style={{ color: "#f0ede6", fontWeight: 600 }}>Swap</span>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-end",
-                  gap: "6px",
-                  minWidth: 0,
-                  maxWidth: "min(420px, 42vw)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <button
-                    onClick={() => setActiveNav("Settings")}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      margin: 0,
-                      fontSize: "11px",
-                      color: "#8a8680",
-                      textDecoration: "underline",
-                      textUnderlineOffset: "2px",
-                      cursor: "pointer",
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    Wallet tips
-                  </button>
-                  {isMobile ? (
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        color: "#FFD208",
-                        border: "1px solid rgba(255,210,8,0.28)",
-                        background: "rgba(255,210,8,0.08)",
-                        borderRadius: "999px",
-                        padding: "5px 10px",
-                        fontFamily: "monospace",
-                      }}
-                    >
-                      Connect wallet on desktop
-                    </span>
-                  ) : (
-                    <RainbowKitCustomConnectButton />
-                  )}
-                </div>
-                {!isMobile && showSepoliaGasWarning && (
-                  <div
-                    role="status"
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+                <button
+                  onClick={() => setActiveNav("Settings")}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    margin: 0,
+                    fontSize: "11px",
+                    color: "#8a8680",
+                    textDecoration: "underline",
+                    textUnderlineOffset: "2px",
+                    cursor: "pointer",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  Wallet tips
+                </button>
+                {isMobile ? (
+                  <span
                     style={{
                       fontSize: "10px",
-                      lineHeight: 1.45,
+                      fontWeight: 700,
                       color: "#FFD208",
-                      textAlign: "right",
-                      padding: "6px 10px",
-                      borderRadius: "8px",
+                      border: "1px solid rgba(255,210,8,0.28)",
                       background: "rgba(255,210,8,0.08)",
-                      border: "1px solid rgba(255,210,8,0.22)",
+                      borderRadius: "999px",
+                      padding: "5px 10px",
                       fontFamily: "monospace",
                     }}
                   >
-                    You need Sepolia ETH for gas fees. Get some free at{" "}
-                    <a
-                      href="https://sepoliafaucet.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "#FFD208", fontWeight: 700, textDecoration: "underline" }}
-                    >
-                      sepoliafaucet.com
-                    </a>
-                  </div>
+                    Connect wallet on desktop
+                  </span>
+                ) : (
+                  <RainbowKitCustomConnectButton />
                 )}
               </div>
             </>
@@ -1895,6 +1858,32 @@ export function SwapPage() {
                     MEV Protection Active
                   </div>
                 </div>
+
+                {showSepoliaGasWarning && (
+                  <div
+                    role="status"
+                    style={{
+                      marginBottom: "18px",
+                      padding: "8px 12px",
+                      borderRadius: "10px",
+                      background: "rgba(255,210,8,0.06)",
+                      border: "1px solid rgba(255,210,8,0.18)",
+                      fontSize: "11px",
+                      color: "#8a8680",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    You need Sepolia ETH for gas fees. Get some free at{" "}
+                    <a
+                      href="https://sepoliafaucet.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#FFD208", fontWeight: 700, textDecoration: "underline" }}
+                    >
+                      sepoliafaucet.com
+                    </a>
+                  </div>
+                )}
 
                 {/* Stats */}
                 <div
