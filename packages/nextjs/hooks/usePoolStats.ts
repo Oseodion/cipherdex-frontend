@@ -59,85 +59,86 @@ export function usePoolStats() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loadRequestRef = useRef(0);
+  const loadSessionRef = useRef(0);
   const optimisticSwapsRef = useRef<Map<string, OptimisticSwap>>(new Map());
 
   const swapEvent = useMemo(() => PoolABI.abi.find((item: any) => item.type === "event" && item.name === "Swap"), []);
+
+  const applySwapLogs = useCallback((rawLogs: any[]) => {
+    const uniqueLogs = rawLogs.filter(
+      (log, index, self) =>
+        index === self.findIndex(l => l.transactionHash === log.transactionHash && l.logIndex === log.logIndex),
+    );
+
+    const dayBuckets = Array(HEATMAP_DAYS).fill(0);
+    const uniqueTraders = new Set<string>();
+    const todayUtc = startOfUtcDayMs(Date.now());
+
+    const swapsFromChain: SwapRecord[] = uniqueLogs
+      .map((log: any) => ({
+        trader: log.args?.trader as string,
+        aToB: log.args?.aToB as boolean,
+        timestamp: Number(log.args?.timestamp ?? 0n),
+        txHash: log.transactionHash as string,
+        blockNumber: log.blockNumber as bigint,
+      }))
+      .filter(item => item.timestamp > 0 && item.trader)
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    const merged = [...swapsFromChain];
+    for (const optimisticSwap of optimisticSwapsRef.current.values()) {
+      if (!swapsFromChain.some(item => item.txHash === optimisticSwap.txHash)) {
+        merged.push({
+          trader: optimisticSwap.trader,
+          aToB: optimisticSwap.aToB,
+          timestamp: optimisticSwap.timestamp,
+          txHash: optimisticSwap.txHash,
+          blockNumber: 0n,
+        });
+      } else {
+        optimisticSwapsRef.current.delete(optimisticSwap.txHash);
+      }
+    }
+    const swaps = merged.sort((a, b) => b.timestamp - a.timestamp);
+
+    swaps.forEach(item => {
+      const eventUtc = startOfUtcDayMs(item.timestamp * 1000);
+      const daysAgo = Math.floor((todayUtc - eventUtc) / DAY_MS);
+      const bucketIdx = HEATMAP_DAYS - 1 - daysAgo;
+      if (daysAgo >= 0 && daysAgo < HEATMAP_DAYS) {
+        dayBuckets[bucketIdx] += 1;
+      }
+      uniqueTraders.add(item.trader.toLowerCase());
+    });
+
+    setActiveTraders(uniqueTraders.size);
+    setTotalTrades(swaps.length);
+    setHeatmapCounts(dayBuckets);
+    setSwapRecords(swaps);
+    setRecentTrades(
+      swaps.slice(0, 3).map(item => {
+        const sold = item.aToB ? "cUSDT" : "cETH";
+        const bought = item.aToB ? "cETH" : "cUSDT";
+        return `${sold} → ${bought} (${formatTrader(item.trader)}) · ${formatAge(item.timestamp)} · ${formatTxHash(item.txHash)}`;
+      }),
+    );
+  }, []);
 
   const loadPoolMetrics = useCallback(async (opts?: { foreground?: boolean }) => {
     if (!publicClient || !CONTRACTS.pool || !swapEvent) {
       if (opts?.foreground) setLoading(false);
       return;
     }
-    const requestId = ++loadRequestRef.current;
+    const sessionId = ++loadSessionRef.current;
     const foreground = opts?.foreground ?? false;
     if (foreground) setLoading(true);
     else setRefreshing(true);
     setError(null);
 
-    const applySwapLogs = (rawLogs: any[]) => {
-
-      const uniqueLogs = rawLogs.filter(
-        (log, index, self) =>
-          index === self.findIndex(l => l.transactionHash === log.transactionHash && l.logIndex === log.logIndex),
-      );
-
-      const dayBuckets = Array(HEATMAP_DAYS).fill(0);
-      const uniqueTraders = new Set<string>();
-      const todayUtc = startOfUtcDayMs(Date.now());
-
-      const swapsFromChain: SwapRecord[] = uniqueLogs
-        .map((log: any) => ({
-          trader: log.args?.trader as string,
-          aToB: log.args?.aToB as boolean,
-          timestamp: Number(log.args?.timestamp ?? 0n),
-          txHash: log.transactionHash as string,
-          blockNumber: log.blockNumber as bigint,
-        }))
-        .filter(item => item.timestamp > 0 && item.trader)
-        .sort((a, b) => b.timestamp - a.timestamp);
-
-      const merged = [...swapsFromChain];
-      for (const optimisticSwap of optimisticSwapsRef.current.values()) {
-        if (!swapsFromChain.some(item => item.txHash === optimisticSwap.txHash)) {
-          merged.push({
-            trader: optimisticSwap.trader,
-            aToB: optimisticSwap.aToB,
-            timestamp: optimisticSwap.timestamp,
-            txHash: optimisticSwap.txHash,
-            blockNumber: 0n,
-          });
-        } else {
-          optimisticSwapsRef.current.delete(optimisticSwap.txHash);
-        }
-      }
-      const swaps = merged.sort((a, b) => b.timestamp - a.timestamp);
-
-      swaps.forEach(item => {
-        const eventUtc = startOfUtcDayMs(item.timestamp * 1000);
-        const daysAgo = Math.floor((todayUtc - eventUtc) / DAY_MS);
-        const bucketIdx = HEATMAP_DAYS - 1 - daysAgo;
-        if (daysAgo >= 0 && daysAgo < HEATMAP_DAYS) {
-          dayBuckets[bucketIdx] += 1;
-        }
-        uniqueTraders.add(item.trader.toLowerCase());
-      });
-
-      setActiveTraders(uniqueTraders.size);
-      setTotalTrades(swaps.length);
-      setHeatmapCounts(dayBuckets);
-      setSwapRecords(swaps);
-      setRecentTrades(
-        swaps.slice(0, 3).map(item => {
-          const sold = item.aToB ? "cUSDT" : "cETH";
-          const bought = item.aToB ? "cETH" : "cUSDT";
-          return `${sold} → ${bought} (${formatTrader(item.trader)}) · ${formatAge(item.timestamp)} · ${formatTxHash(item.txHash)}`;
-        }),
-      );
-    };
-
     try {
       const latestBlock = await publicClient.getBlockNumber();
+      if (sessionId !== loadSessionRef.current) return;
+
       const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
       const quickFrom = latestBlock > QUICK_LOOKBACK_BLOCKS ? latestBlock - QUICK_LOOKBACK_BLOCKS : 0n;
 
@@ -149,41 +150,53 @@ export function usePoolStats() {
         fromBlock: quickFrom,
         toBlock: latestBlock,
       });
-      if (requestId !== loadRequestRef.current) return;
+      if (sessionId !== loadSessionRef.current) return;
+
       applySwapLogs(quickLogs);
-      setRefreshing(false);
       if (foreground) setLoading(false);
 
       if (quickFrom > fromBlock) {
-        void fetchEventLogsChunked({
-          publicClient,
-          address: CONTRACTS.pool,
-          abi: PoolABI.abi,
-          eventName: "Swap",
-          fromBlock,
-          toBlock: latestBlock,
-        })
-          .then(fullLogs => {
-            if (requestId !== loadRequestRef.current) return;
-            applySwapLogs(fullLogs);
-          })
-          .catch(() => {
-            // Keep quick-window stats if the full backfill fails or times out.
+        setRefreshing(true);
+        try {
+          const fullLogs = await fetchEventLogsChunked({
+            publicClient,
+            address: CONTRACTS.pool,
+            abi: PoolABI.abi,
+            eventName: "Swap",
+            fromBlock,
+            toBlock: latestBlock,
           });
+          if (sessionId !== loadSessionRef.current) return;
+          // Merge with quick pass so a partial backfill cannot overwrite better recent-window data.
+          applySwapLogs([...fullLogs, ...quickLogs]);
+        } catch {
+          // Keep quick-window stats if the full backfill fails or times out.
+        } finally {
+          if (sessionId === loadSessionRef.current) {
+            setRefreshing(false);
+          }
+        }
+      } else {
+        setRefreshing(false);
       }
     } catch (err: any) {
-      if (requestId !== loadRequestRef.current) return;
+      if (sessionId !== loadSessionRef.current) return;
       setError(err?.message ?? "Unable to load pool activity");
       setRefreshing(false);
       if (foreground) setLoading(false);
     }
-  }, [publicClient, swapEvent]);
+  }, [applySwapLogs, publicClient, swapEvent]);
+
+  const loadPoolMetricsRef = useRef(loadPoolMetrics);
+  loadPoolMetricsRef.current = loadPoolMetrics;
 
   useEffect(() => {
     if (!publicClient) return;
-    loadPoolMetrics({ foreground: true });
+    loadPoolMetricsRef.current({ foreground: true });
     return undefined;
-  }, [loadPoolMetrics, publicClient]);
+    // Only re-fetch when the RPC client identity changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publicClient?.uid]);
 
   useEffect(() => {
     const onSwapConfirmed = (evt: Event) => {
