@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONTRACTS } from "./useCipherDEX";
 import { usePublicClient } from "wagmi";
+import { useTargetNetwork } from "~~/hooks/helper";
 import PoolABI from "~~/contracts/CipherDEXPool.json";
 import { fetchEventLogsChunked } from "~~/utils/helper/fetchEventLogs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_BLOCKS = 250000n;
+const QUICK_LOOKBACK_BLOCKS = 8000n;
 const HEATMAP_DAYS = 28;
 
 const formatAge = (timestampSeconds: number) => {
@@ -47,7 +49,8 @@ type OptimisticSwap = {
 };
 
 export function usePoolStats() {
-  const publicClient = usePublicClient();
+  const { targetNetwork } = useTargetNetwork();
+  const publicClient = usePublicClient({ chainId: targetNetwork.id });
   const [activeTraders, setActiveTraders] = useState(0);
   const [totalTrades, setTotalTrades] = useState(0);
   const [heatmapCounts, setHeatmapCounts] = useState<number[]>(Array(HEATMAP_DAYS).fill(0));
@@ -62,7 +65,10 @@ export function usePoolStats() {
   const swapEvent = useMemo(() => PoolABI.abi.find((item: any) => item.type === "event" && item.name === "Swap"), []);
 
   const loadPoolMetrics = useCallback(async (opts?: { foreground?: boolean }) => {
-    if (!publicClient || !CONTRACTS.pool || !swapEvent) return;
+    if (!publicClient || !CONTRACTS.pool || !swapEvent) {
+      if (opts?.foreground) setLoading(false);
+      return;
+    }
     const requestId = ++loadRequestRef.current;
     const foreground = opts?.foreground ?? false;
     if (foreground) setLoading(true);
@@ -133,18 +139,38 @@ export function usePoolStats() {
     try {
       const latestBlock = await publicClient.getBlockNumber();
       const fromBlock = latestBlock > LOOKBACK_BLOCKS ? latestBlock - LOOKBACK_BLOCKS : 0n;
-      const fullLogs = await fetchEventLogsChunked({
+      const quickFrom = latestBlock > QUICK_LOOKBACK_BLOCKS ? latestBlock - QUICK_LOOKBACK_BLOCKS : 0n;
+
+      const quickLogs = await fetchEventLogsChunked({
         publicClient,
         address: CONTRACTS.pool,
         abi: PoolABI.abi,
         eventName: "Swap",
-        fromBlock,
+        fromBlock: quickFrom,
         toBlock: latestBlock,
       });
       if (requestId !== loadRequestRef.current) return;
-      applySwapLogs(fullLogs);
+      applySwapLogs(quickLogs);
       setRefreshing(false);
       if (foreground) setLoading(false);
+
+      if (quickFrom > fromBlock) {
+        void fetchEventLogsChunked({
+          publicClient,
+          address: CONTRACTS.pool,
+          abi: PoolABI.abi,
+          eventName: "Swap",
+          fromBlock,
+          toBlock: latestBlock,
+        })
+          .then(fullLogs => {
+            if (requestId !== loadRequestRef.current) return;
+            applySwapLogs(fullLogs);
+          })
+          .catch(() => {
+            // Keep quick-window stats if the full backfill fails or times out.
+          });
+      }
     } catch (err: any) {
       if (requestId !== loadRequestRef.current) return;
       setError(err?.message ?? "Unable to load pool activity");
@@ -154,9 +180,10 @@ export function usePoolStats() {
   }, [publicClient, swapEvent]);
 
   useEffect(() => {
+    if (!publicClient) return;
     loadPoolMetrics({ foreground: true });
     return undefined;
-  }, [loadPoolMetrics]);
+  }, [loadPoolMetrics, publicClient]);
 
   useEffect(() => {
     const onSwapConfirmed = (evt: Event) => {
